@@ -2,72 +2,373 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Serverless P2P Chat</title>
-  <style>
-    body {
-      font: 16px system-ui;
-      max-width: 650px;
-      margin: 30px auto;
-      padding: 16px;
-      background: #f4f6f8;
-    }
-    section {
-      background: white;
-      padding: 16px;
-      border-radius: 12px;
-      margin: 14px 0;
-    }
-    textarea, input, button {
-      box-sizing: border-box;
-      width: 100%;
-      padding: 12px;
-      margin: 6px 0;
-      font: inherit;
-    }
-    textarea { min-height: 100px; }
-    button { cursor: pointer; }
-    #messages {
-      min-height: 100px;
-      overflow-wrap: anywhere;
-      white-space: pre-wrap;
-    }
-    #status { font-weight: bold; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f7f7f5">
+<title>P2P Chat</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<style>
+:root {
+  --bg: #f7f7f5;
+  --panel: #fff;
+  --ink: #20211f;
+  --muted: #777970;
+  --line: #e7e7e2;
+  --accent: #245c4a;
+  --bubble: #e9eee9;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.45 system-ui, sans-serif;
+  min-height: 100dvh;
+}
+
+button, textarea { font: inherit; }
+
+.app {
+  width: min(100%, 720px);
+  height: 100dvh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+}
+
+header {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.brand {
+  font-weight: 750;
+  font-size: 18px;
+}
+
+.status {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b4b5af;
+}
+
+.dot.online { background: #319b70; }
+
+#setup {
+  padding: 24px 20px;
+  overflow: auto;
+  text-align: center;
+}
+
+#setup h1 {
+  font-size: 23px;
+  margin: 2px 0 7px;
+}
+
+.hint {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 auto 20px;
+  max-width: 410px;
+}
+
+.qr-frame {
+  width: min(78vw, 290px);
+  min-height: 220px;
+  margin: 0 auto 12px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#qrcode {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+#qrcode img,
+#qrcode canvas {
+  max-width: 100%;
+  height: auto !important;
+}
+
+.primary {
+  width: min(100%, 290px);
+  border: 0;
+  border-radius: 12px;
+  padding: 13px 16px;
+  background: var(--ink);
+  color: #fff;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.primary:disabled { opacity: .45; }
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 420px;
+  margin: 22px auto;
+  color: #999b93;
+  font-size: 12px;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  height: 1px;
+  background: var(--line);
+  flex: 1;
+}
+
+#paste {
+  width: min(100%, 420px);
+  height: 76px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fafaf8;
+  outline: none;
+}
+
+#paste:focus,
+#message:focus { border-color: #9aa99f; }
+
+.error {
+  color: #b33a32;
+  font-size: 13px;
+  min-height: 18px;
+  margin: 8px auto 0;
+  max-width: 420px;
+}
+
+#chat {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-behavior: smooth;
+}
+
+.message {
+  max-width: min(82%, 480px);
+  padding: 10px 13px;
+  border-radius: 17px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.message.mine {
+  align-self: flex-end;
+  background: var(--accent);
+  color: white;
+  border-bottom-right-radius: 5px;
+}
+
+.message.theirs {
+  align-self: flex-start;
+  background: var(--bubble);
+  color: var(--ink);
+  border-bottom-left-radius: 5px;
+}
+
+.empty {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 20px;
+}
+
+.composer {
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: flex-end;
+  gap: 9px;
+  background: #fff;
+}
+
+#message {
+  flex: 1;
+  min-width: 0;
+  max-height: 130px;
+  resize: none;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 11px 15px;
+  outline: none;
+  background: #fafaf8;
+}
+
+#send {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  flex: none;
+}
+
+#send:disabled { opacity: .4; }
+
+#notice {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  padding: 5px 12px 0;
+}
+
+@media (min-width: 600px) {
+  .app {
+    height: min(100dvh, 900px);
+    margin: 20px auto;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+  }
+
+  body { padding: 0 12px; }
+}
+</style>
 </head>
+
 <body>
-  <h1>P2P Chat</h1>
-  <p id="status">Not connected</p>
+<main class="app">
 
-  <section>
-    <h2>1. Create or accept a connection</h2>
-    <button id="create">Create offer (User A)</button>
-    <textarea id="local" placeholder="Your offer or answer appears here"></textarea>
-    <button id="copy">Copy my code</button>
+  <header>
+    <div class="brand">P2P Chat</div>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="status">Preparing connection…</span>
+    </div>
+  </header>
 
-    <textarea id="remote" placeholder="Paste the other user's code here"></textarea>
-    <button id="accept">Accept offer (User B)</button>
-    <button id="answer">Apply answer (User A)</button>
+  <section id="setup">
+    <h1 id="setupTitle">Create a connection</h1>
+
+    <p class="hint" id="setupHint">
+      Scan this QR code or copy the request and send it to the other person.
+    </p>
+
+    <div class="qr-frame">
+      <div id="qrcode" aria-label="Connection QR code"></div>
+    </div>
+
+    <button class="primary" id="copy" disabled>
+      Copy Request
+    </button>
+
+    <div class="divider">OR PASTE CONNECTION CODE</div>
+
+    <textarea
+      id="paste"
+      placeholder="Paste..."
+      autocomplete="off"
+      spellcheck="false"
+      aria-label="Paste connection code"
+    ></textarea>
+
+    <p class="error" id="error" role="status"></p>
   </section>
 
-  <section>
-    <h2>2. Chat</h2>
-    <div id="messages"></div>
-    <input id="message" placeholder="Write a message">
-    <button id="send">Send message</button>
+  <section id="chat" aria-label="Chat">
+    <div id="messages">
+      <div class="empty" id="empty">
+        Waiting for the peer to connect…
+      </div>
+    </div>
+
+    <div id="notice">
+      Messages are sent directly between browsers.
+    </div>
+
+    <form class="composer" id="composer">
+      <textarea
+        id="message"
+        rows="1"
+        placeholder="Message…"
+        aria-label="Message"
+        disabled
+      ></textarea>
+
+      <button
+        id="send"
+        type="submit"
+        aria-label="Send message"
+        disabled
+      >↑</button>
+    </form>
   </section>
+
+</main>
 
 <script>
-const statusEl = document.querySelector("#status");
-const localEl = document.querySelector("#local");
-const remoteEl = document.querySelector("#remote");
-const messages = document.querySelector("#messages");
+const $ = selector => document.querySelector(selector);
 
-let pc;
-let channel;
+const statusEl = $("#status");
+const dot = $("#dot");
+const setup = $("#setup");
+const chat = $("#chat");
+const paste = $("#paste");
+const copy = $("#copy");
+const qr = $("#qrcode");
+const errorEl = $("#error");
 
-function setupConnection() {
+let pc = null;
+let channel = null;
+let localCode = "";
+let stage = "starting";
+let busy = false;
+
+function setStatus(text, online = false) {
+  statusEl.textContent = text;
+  dot.classList.toggle("online", online);
+}
+
+function setError(text = "") {
+  errorEl.textContent = text;
+}
+
+function makePeer() {
   pc = new RTCPeerConnection({
     iceServers: [
       { urls: "stun:stun.l.google.com:19302" }
@@ -75,7 +376,16 @@ function setupConnection() {
   });
 
   pc.onconnectionstatechange = () => {
-    statusEl.textContent = "Connection: " + pc.connectionState;
+    if (pc.connectionState === "connected") {
+      setStatus("Connected", true);
+      showChat();
+    } else if (pc.connectionState === "connecting") {
+      setStatus("Connecting…");
+    } else if (pc.connectionState === "failed") {
+      setStatus("Connection failed");
+    } else if (pc.connectionState === "disconnected") {
+      setStatus("Peer disconnected");
+    }
   };
 
   pc.ondatachannel = event => {
@@ -89,16 +399,35 @@ function setupChannel(ch) {
   channel = ch;
 
   channel.onopen = () => {
-    statusEl.textContent = "Connected — ready to chat";
+    setStatus("Connected", true);
+    showChat();
+    $("#message").disabled = false;
+    $("#send").disabled = false;
+    $("#message").focus();
   };
 
-  channel.onclose = () => {
-    statusEl.textContent = "Chat disconnected";
-  };
+  channel.onclose = () => setStatus("Chat disconnected");
 
   channel.onmessage = event => {
-    messages.textContent += "\nThem: " + event.data;
+    addMessage(String(event.data), "theirs");
   };
+}
+
+function showChat() {
+  setup.style.display = "none";
+  chat.style.display = "flex";
+}
+
+function addMessage(text, kind) {
+  const empty = $("#empty");
+  if (empty) empty.remove();
+
+  const el = document.createElement("div");
+  el.className = "message " + kind;
+  el.textContent = text;
+
+  $("#messages").appendChild(el);
+  $("#messages").scrollTop = $("#messages").scrollHeight;
 }
 
 function waitForIce() {
@@ -107,83 +436,201 @@ function waitForIce() {
   }
 
   return new Promise(resolve => {
-    pc.addEventListener("icegatheringstatechange", () => {
-      if (pc.iceGatheringState === "complete") resolve();
+    const timeout = setTimeout(resolve, 15000);
+
+    pc.addEventListener("icegatheringstatechange", function handler() {
+      if (pc.iceGatheringState === "complete") {
+        clearTimeout(timeout);
+        pc.removeEventListener(
+          "icegatheringstatechange",
+          handler
+        );
+        resolve();
+      }
     });
   });
 }
 
-document.querySelector("#create").onclick = async () => {
+function renderCode(code, type) {
+  localCode = code;
+  qr.innerHTML = "";
+  setError("");
+
+  if (typeof QRCode === "undefined") {
+    setError("QR generator unavailable. Use the copy button.");
+  } else {
+    try {
+      new QRCode(qr, {
+        text: code,
+        width: 260,
+        height: 260,
+        correctLevel: QRCode.CorrectLevel.L
+      });
+    } catch (e) {
+      setError("Could not generate QR. Use the copy button.");
+    }
+  }
+
+  copy.disabled = false;
+  copy.textContent =
+    type === "offer" ? "Copy Request" : "Copy Answer";
+
+  $("#setupTitle").textContent =
+    type === "offer" ? "Your connection request" : "Answer ready";
+
+  $("#setupHint").textContent =
+    type === "offer"
+      ? "Send this request to the other person. They can paste it here on their device."
+      : "Send this answer back to the person who created the request.";
+
+  stage = type;
+}
+
+async function createOffer() {
   try {
-    setupConnection();
-    setupChannel(pc.createDataChannel("chat"));
+    makePeer();
+
+    channel = pc.createDataChannel("chat");
+    setupChannel(channel);
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     await waitForIce();
 
-    localEl.value = JSON.stringify(pc.localDescription);
-    statusEl.textContent = "Offer ready to share";
+    renderCode(JSON.stringify(pc.localDescription), "offer");
+    setStatus("Request ready");
   } catch (e) {
-    statusEl.textContent = "Error: " + e.message;
+    setError("Could not create request: " + e.message);
+    setStatus("Setup failed");
   }
-};
+}
 
-document.querySelector("#accept").onclick = async () => {
+async function processCode(raw) {
+  if (busy || !raw.trim()) return;
+
+  let data;
+
   try {
-    setupConnection();
-
-    const offer = JSON.parse(remoteEl.value);
-    await pc.setRemoteDescription(offer);
-
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    await waitForIce();
-
-    localEl.value = JSON.stringify(pc.localDescription);
-    statusEl.textContent = "Answer ready — send it to User A";
-  } catch (e) {
-    statusEl.textContent = "Error: " + e.message;
-  }
-};
-
-document.querySelector("#answer").onclick = async () => {
-  try {
-    if (!pc) throw new Error("Create an offer first");
-
-    await pc.setRemoteDescription(
-      JSON.parse(remoteEl.value)
-    );
-
-    statusEl.textContent = "Answer applied; connecting...";
-  } catch (e) {
-    statusEl.textContent = "Error: " + e.message;
-  }
-};
-
-document.querySelector("#copy").onclick = async () => {
-  try {
-    await navigator.clipboard.writeText(localEl.value);
-    statusEl.textContent = "Connection code copied";
+    data = JSON.parse(raw.trim());
   } catch {
-    statusEl.textContent = "Select the code and copy it manually";
-  }
-};
-
-document.querySelector("#send").onclick = () => {
-  const input = document.querySelector("#message");
-
-  if (!channel || channel.readyState !== "open") {
-    statusEl.textContent = "Not connected yet";
     return;
   }
 
-  if (!input.value.trim()) return;
+  if (!data || !data.type || !data.sdp) return;
 
-  channel.send(input.value);
-  messages.textContent += "\nYou: " + input.value;
+  busy = true;
+  setError("");
+
+  try {
+    if (data.type === "offer" && stage === "offer") {
+      // This browser becomes the answering peer.
+      pc.ondatachannel = null;
+      pc.close();
+
+      makePeer();
+
+      await pc.setRemoteDescription(data);
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await waitForIce();
+
+      renderCode(JSON.stringify(pc.localDescription), "answer");
+
+      paste.style.display = "none";
+      $(".divider").style.display = "none";
+
+      $("#setupHint").textContent =
+        "Copy this answer and send it back to the person who shared the request.";
+
+      setStatus("Answer ready");
+
+    } else if (data.type === "answer" && stage === "offer") {
+      await pc.setRemoteDescription(data);
+
+      paste.value = "";
+      setup.style.display = "none";
+      chat.style.display = "flex";
+
+      setStatus("Answer received — connecting…");
+
+    } else if (data.type === "answer" && stage === "answer") {
+      setError(
+        "This browser created the answer. Paste it on the browser that created the request."
+      );
+
+    } else if (data.type === "offer" && stage === "answer") {
+      setError(
+        "This browser is already answering a request."
+      );
+
+    } else {
+      setError("This connection code does not match the current step.");
+    }
+  } catch (e) {
+    setError("Could not use that code: " + e.message);
+  } finally {
+    busy = false;
+  }
+}
+
+copy.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(localCode);
+
+    copy.textContent = "Copied";
+
+    setTimeout(() => {
+      copy.textContent =
+        stage === "offer" ? "Copy Request" : "Copy Answer";
+    }, 1300);
+
+  } catch {
+    setError(
+      "Clipboard unavailable. Copy the code manually if needed."
+    );
+  }
+});
+
+paste.addEventListener("paste", () => {
+  setTimeout(() => processCode(paste.value), 100);
+});
+
+paste.addEventListener("input", () => {
+  if (paste.value.trim().endsWith("}")) {
+    processCode(paste.value);
+  }
+});
+
+$("#composer").addEventListener("submit", event => {
+  event.preventDefault();
+
+  const input = $("#message");
+  const text = input.value.trim();
+
+  if (!text || !channel || channel.readyState !== "open") return;
+
+  channel.send(text);
+  addMessage(text, "mine");
+
   input.value = "";
-};
+  input.style.height = "auto";
+  input.focus();
+});
+
+$("#message").addEventListener("input", function () {
+  this.style.height = "auto";
+  this.style.height = Math.min(this.scrollHeight, 130) + "px";
+});
+
+$("#message").addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    $("#composer").requestSubmit();
+  }
+});
+
+createOffer();
 </script>
 </body>
 </html>
