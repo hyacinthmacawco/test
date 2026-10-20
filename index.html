@@ -1,1399 +1,889 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#ffffff">
-  <title>P2P Chat</title>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-
-  <style>
-    :root {
-      --bg: #ffffff;
-      --surface: #f5f5f5;
-      --text: #171717;
-      --muted: #737373;
-      --border: #e5e5e5;
-      --accent: #171717;
-      --accent-text: #ffffff;
-      --mine: #171717;
-      --mine-text: #ffffff;
-      --theirs: #f0f0f0;
-      --theirs-text: #171717;
-      --input-bg: #ffffff;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    html,
-    body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-        sans-serif;
-      color: var(--text);
-      background: var(--bg);
-      overflow: hidden;
-    }
-
-    button,
-    input,
-    textarea {
-      font: inherit;
-    }
-
-    button {
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    button:disabled {
-      cursor: not-allowed;
-      opacity: 0.45;
-    }
-
-    .app {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      height: 100%;
-      height: 100dvh;
-    }
-
-    /* Top bar and conversation tabs */
-
-    .topbar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 60px;
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-
-    .tabs {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex: 1;
-      min-width: 0;
-      overflow-x: auto;
-      scrollbar-width: none;
-    }
-
-    .tabs::-webkit-scrollbar {
-      display: none;
-    }
-
-    .tab {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      flex-shrink: 0;
-      max-width: 180px;
-      min-height: 38px;
-      padding: 8px 12px;
-      border: 1px solid transparent;
-      border-radius: 8px;
-      background: transparent;
-      color: var(--muted);
-      white-space: nowrap;
-    }
-
-    .tab.active {
-      color: var(--text);
-      background: var(--surface);
-      border-color: var(--border);
-    }
-
-    .tab-name {
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .tab-close {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 18px;
-      height: 18px;
-      border: 0;
-      padding: 0;
-      border-radius: 50%;
-      background: transparent;
-      color: inherit;
-      font-size: 16px;
-    }
-
-    .tab-close:hover {
-      background: #dcdcdc;
-    }
-
-    .icon-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 40px;
-      height: 40px;
-      flex-shrink: 0;
-      padding: 0;
-      border: 1px solid transparent;
-      border-radius: 8px;
-      background: transparent;
-      color: var(--text);
-    }
-
-    .icon-button:hover {
-      background: var(--surface);
-    }
-
-    .icon-button svg {
-      width: 20px;
-      height: 20px;
-    }
-
-    .icon-button[hidden] {
-      display: none !important;
-    }
-
-    .new-tab {
-      font-size: 24px;
-      line-height: 1;
-    }
-
-    /* Main content */
-
-    .main {
-      position: relative;
-      display: flex;
-      flex: 1;
-      min-height: 0;
-      flex-direction: column;
-    }
-
-    .screen {
-      display: none;
-      flex: 1;
-      min-height: 0;
-      flex-direction: column;
-    }
-
-    .screen.active {
-      display: flex;
-    }
-
-    /* Connection setup */
-
-    .setup-screen {
-      overflow-y: auto;
-      align-items: center;
-      padding: 32px 18px;
-    }
-
-    .setup-card {
-      width: 100%;
-      max-width: 440px;
-      margin: auto;
-    }
-
-    .setup-card h2 {
-      margin: 0 0 8px;
-      font-size: 23px;
-      font-weight: 650;
-      letter-spacing: -0.5px;
-    }
-
-    .setup-description {
-      margin: 0 0 24px;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.6;
-    }
-
-    .section-label {
-      display: block;
-      margin: 18px 0 8px;
-      font-size: 13px;
-      font-weight: 600;
-    }
-
-    .qr-frame {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 190px;
-      padding: 16px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: #ffffff;
-    }
-
-    #qrcode {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 150px;
-      max-width: 100%;
-      overflow: hidden;
-    }
-
-    #qrcode img,
-    #qrcode canvas {
-      max-width: 100%;
-      height: auto;
-    }
-
-    .code-output {
-      display: block;
-      width: 100%;
-      min-height: 82px;
-      padding: 10px;
-      resize: vertical;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      outline: none;
-      background: var(--surface);
-      color: var(--text);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 12px;
-      overflow-wrap: anywhere;
-    }
-
-    .code-output:focus,
-    .code-input:focus {
-      border-color: #999999;
-    }
-
-    .secondary-button,
-    .primary-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      min-height: 42px;
-      padding: 10px 14px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 550;
-    }
-
-    .secondary-button {
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    .primary-button {
-      background: var(--accent);
-      color: var(--accent-text);
-      border-color: var(--accent);
-    }
-
-    .secondary-button:hover {
-      background: var(--surface);
-    }
-
-    .primary-button:hover {
-      opacity: 0.88;
-    }
-
-    .setup-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 10px;
-    }
-
-    .setup-actions button {
-      flex: 1;
-    }
-
-    .divider {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin: 24px 0;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .divider::before,
-    .divider::after {
-      content: "";
-      height: 1px;
-      flex: 1;
-      background: var(--border);
-    }
-
-    .code-input {
-      display: block;
-      width: 100%;
-      min-height: 100px;
-      padding: 12px;
-      resize: vertical;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      outline: none;
-      background: var(--bg);
-      color: var(--text);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 13px;
-    }
-
-    .error {
-      display: none;
-      margin-top: 10px;
-      color: #b42318;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    .error.visible {
-      display: block;
-    }
-
-    /* Chat screen */
-
-    .chat-screen {
-      position: relative;
-      min-height: 0;
-    }
-
-    .messages {
-      display: flex;
-      flex: 1;
-      flex-direction: column;
-      gap: 10px;
-      min-height: 0;
-      padding: 18px 14px 100px;
-      overflow-y: auto;
-      overscroll-behavior: contain;
-    }
-
-    .empty-state {
-      display: flex;
-      flex: 1;
-      align-items: center;
-      justify-content: center;
-      min-height: 180px;
-      color: var(--muted);
-      font-size: 14px;
-      text-align: center;
-    }
-
-    .message {
-      max-width: min(82%, 600px);
-      padding: 10px 13px;
-      border-radius: 16px;
-      font-size: 15px;
-      line-height: 1.5;
-      overflow-wrap: anywhere;
-      white-space: pre-wrap;
-    }
-
-    .message.mine {
-      align-self: flex-end;
-      color: var(--mine-text);
-      background: var(--mine);
-      border-bottom-right-radius: 4px;
-    }
-
-    .message.theirs {
-      align-self: flex-start;
-      color: var(--theirs-text);
-      background: var(--theirs);
-      border-bottom-left-radius: 4px;
-    }
-
-    .message-time {
-      display: block;
-      margin-top: 4px;
-      font-size: 10px;
-      opacity: 0.65;
-      text-align: right;
-    }
-
-    .offline-notice {
-      display: none;
-      flex-shrink: 0;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border-top: 1px solid var(--border);
-      background: var(--surface);
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .offline-notice.visible {
-      display: flex;
-    }
-
-    .offline-notice button {
-      padding: 5px 9px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--bg);
-      color: var(--text);
-      font-size: 12px;
-    }
-
-    /* Edge-to-edge message composer */
-
-    .composer {
-      position: absolute;
-      z-index: 2;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      margin: 0;
-      padding: 0;
-      background: var(--bg);
-      border-top: 1px solid var(--border);
-    }
-
-    .message-field {
-      display: flex;
-      align-items: flex-end;
-      gap: 0;
-      width: 100%;
-      min-height: 56px;
-      margin: 0;
-      padding: 6px 8px;
-      border: none;
-      border-radius: 0;
-      background: var(--input-bg);
-      box-sizing: border-box;
-    }
-
-    .message-field textarea {
-      display: block;
-      flex: 1;
-      min-width: 0;
-      width: 100%;
-      min-height: 42px;
-      max-height: 140px;
-      margin: 0;
-      padding: 10px 8px;
-      resize: none;
-      overflow-y: auto;
-      border: none;
-      border-radius: 0;
-      outline: none;
-      background: transparent;
-      color: var(--text);
-      font-size: 16px;
-      line-height: 22px;
-      box-sizing: border-box;
-    }
-
-    .message-field textarea::placeholder {
-      color: var(--muted);
-    }
-
-    .send-button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      width: 42px;
-      height: 42px;
-      margin: 0;
-      padding: 0;
-      border: none;
-      border-radius: 0;
-      background: transparent;
-      color: var(--text);
-    }
-
-    .send-button:hover:not(:disabled) {
-      opacity: 0.65;
-    }
-
-    .send-button svg {
-      width: 23px;
-      height: 23px;
-    }
-
-    .send-button:disabled {
-      opacity: 0.3;
-    }
-
-    @media (max-width: 480px) {
-      .topbar {
-        gap: 3px;
-        padding: 6px;
-      }
-
-      .tab {
-        padding: 8px 10px;
-      }
-
-      .icon-button {
-        width: 36px;
-        height: 38px;
-      }
-
-      .setup-screen {
-        padding: 22px 16px;
-      }
-
-      .messages {
-        padding-right: 10px;
-        padding-left: 10px;
-      }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f7f7f5">
+<title>Chat</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+<style>
+:root {
+  --bg: #f7f7f5;
+  --panel: #fff;
+  --ink: #20211f;
+  --muted: #777970;
+  --line: #e7e7e2;
+  --accent: #245c4a;
+  --bubble: #e9eee9;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.45 system-ui, sans-serif;
+  min-height: 100dvh;
+}
+
+button, textarea { font: inherit; }
+
+.app {
+  width: min(100%, 720px);
+  height: 100dvh;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 9px 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tab.active {
+  background: #eeefeb;
+  color: var(--ink);
+}
+
+.tab-add {
+  min-width: 36px;
+  padding: 7px 10px;
+  font-size: 22px;
+  line-height: 1;
+  border: 1px dashed #c9cbc3;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.icon-button:hover { background: #f0f1ed; }
+
+.icon-button svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#setup {
+  padding: 24px 20px;
+  overflow: auto;
+  text-align: center;
+}
+
+#setup h1 {
+  font-size: 23px;
+  margin: 2px 0 7px;
+}
+
+.hint {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 auto 20px;
+  max-width: 410px;
+}
+
+.qr-frame {
+  width: min(78vw, 290px);
+  min-height: 220px;
+  margin: 0 auto 12px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#qrcode {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+#qrcode img,
+#qrcode canvas {
+  max-width: 100%;
+  height: auto !important;
+}
+
+.primary {
+  width: min(100%, 290px);
+  border: 0;
+  border-radius: 12px;
+  padding: 13px 16px;
+  background: var(--ink);
+  color: #fff;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.primary:disabled { opacity: .45; }
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 420px;
+  margin: 22px auto;
+  color: #999b93;
+  font-size: 12px;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  height: 1px;
+  background: var(--line);
+  flex: 1;
+}
+
+#paste {
+  width: min(100%, 420px);
+  height: 76px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fafaf8;
+  outline: none;
+}
+
+#paste:focus { border-color: #9aa99f; }
+
+.error {
+  color: #b33a32;
+  font-size: 13px;
+  min-height: 18px;
+  margin: 8px auto 0;
+  max-width: 420px;
+}
+
+#openChats[hidden],
+#saveChats[hidden] {
+  display: none !important;
+}
+
+#chat {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-behavior: smooth;
+}
+
+.message {
+  max-width: min(82%, 480px);
+  padding: 10px 13px;
+  border-radius: 17px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.message.mine {
+  align-self: flex-end;
+  background: var(--accent);
+  color: white;
+  border-bottom-right-radius: 5px;
+}
+
+.message.theirs {
+  align-self: flex-start;
+  background: var(--bubble);
+  color: var(--ink);
+  border-bottom-left-radius: 5px;
+}
+
+.empty {
+  margin: auto;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 20px;
+}
+
+.composer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  background: var(--bg);
+}
+
+.message-field {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  margin: 0;
+  padding: 8px;
+  border: none;
+  border-radius: 0;
+  box-sizing: border-box;
+  background: var(--input-bg);
+}
+
+.message-field textarea {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 10px;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.message-field button {
+  flex-shrink: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+#message {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  max-height: 130px;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  padding: 8px 0;
+  outline: none;
+  background: transparent;
+}
+
+#message:focus { border-color: transparent; }
+
+#send {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+#send svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#send:disabled { opacity: .4; }
+
+@media (min-width: 600px) {
+  .app {
+    height: min(100dvh, 900px);
+    margin: 20px auto;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+  }
+
+  body { padding: 0 12px; }
+}
+</style>
 </head>
 
 <body>
-  <div class="app">
-    <header class="topbar">
-      <nav id="tabs" class="tabs" aria-label="Conversations"></nav>
+<main class="app">
+  <header>
+    <nav id="tabs" class="tabs" aria-label="Conversations"></nav>
 
-      <button
-        id="newTab"
-        class="icon-button new-tab"
-        type="button"
-        title="New chat"
-        aria-label="New chat"
-      >+</button>
-
-      <button
-        id="openChats"
-        class="icon-button"
-        type="button"
-        title="Open saved chats"
-        aria-label="Open saved chats"
-        hidden
-      >
-        <!-- Standard folder-open icon -->
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-          aria-hidden="true">
+    <div class="header-actions">
+      <button class="icon-button" id="openChats"
+        type="button" aria-label="Open chats" title="Open chats">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v2" />
           <path d="M3 7v11a2 2 0 0 0 2 2h12l4-8H7l-4 8" />
         </svg>
       </button>
 
-      <button
-        id="saveChats"
-        class="icon-button"
-        type="button"
-        title="Save chats"
-        aria-label="Save chats"
-        hidden
-      >
-        <!-- Standard save icon -->
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-          aria-hidden="true">
-          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
-          <path d="M17 21v-8H7v8" />
-          <path d="M7 3v5h8" />
+      <button class="icon-button" id="saveChats"
+        type="button" aria-label="Save all chats" title="Save all chats">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 3h12l3 3v15H4V3z"/>
+          <path d="M8 3v6h8V3M8 21v-7h8v7"/>
         </svg>
       </button>
 
-      <input
-        id="chatFile"
-        type="file"
-        accept=".json,application/json"
-        hidden
-      >
-    </header>
-
-    <main class="main">
-      <!-- Connection setup screen -->
-      <section id="setupScreen" class="screen setup-screen active">
-        <div class="setup-card">
-          <h2 id="setupTitle">Connect to a person</h2>
-          <p class="setup-description">
-            Share your connection code with the other person, then paste their
-            response below. The code establishes a direct browser-to-browser
-            connection.
-          </p>
-
-          <label class="section-label" for="localCode">
-            Your connection code
-          </label>
-
-          <div class="qr-frame">
-            <div id="qrcode"></div>
-          </div>
-
-          <textarea
-            id="localCode"
-            class="code-output"
-            readonly
-            placeholder="Generating connection code..."
-            aria-label="Your connection code"
-          ></textarea>
-
-          <div class="setup-actions">
-            <button id="copyCode" class="secondary-button" type="button">
-              Copy code
-            </button>
-          </div>
-
-          <div class="divider">Then exchange codes</div>
-
-          <label class="section-label" for="peerCode">
-            Paste the other person's code
-          </label>
-
-          <textarea
-            id="peerCode"
-            class="code-input"
-            placeholder="Paste the offer or answer code here..."
-            spellcheck="false"
-            autocapitalize="off"
-            autocomplete="off"
-          ></textarea>
-
-          <div class="setup-actions">
-            <button id="processCode" class="primary-button" type="button">
-              Submit code
-            </button>
-          </div>
-
-          <p id="error" class="error" role="alert"></p>
-        </div>
-      </section>
-
-      <!-- Chat screen -->
-      <section id="chatScreen" class="screen chat-screen">
-        <div id="messages" class="messages"></div>
-
-        <div id="offlineNotice" class="offline-notice">
-          <span>This chat is saved, but not connected.</span>
-          <button id="reconnect" type="button">Reconnect</button>
-        </div>
-
-        <form id="composer" class="composer">
-          <div class="message-field">
-            <textarea
-              id="message"
-              rows="1"
-              placeholder="Message..."
-              aria-label="Message"
-            ></textarea>
-
-            <button
-              id="send"
-              class="send-button"
-              type="submit"
-              aria-label="Send message"
-              title="Send message"
-              disabled
-            >
-              <!-- Paper-plane send icon -->
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                stroke-width="2" stroke-linecap="round"
-                stroke-linejoin="round" aria-hidden="true">
-                <path d="m22 2-7 20-4-9-9-4Z" />
-                <path d="M22 2 11 13" />
-              </svg>
-            </button>
-          </div>
-        </form>
-      </section>
-    </main>
-  </div>
-
-  <script>
-    "use strict";
-
-    const $ = (id) => document.getElementById(id);
-
-    const tabsElement = $("tabs");
-    const setupScreen = $("setupScreen");
-    const chatScreen = $("chatScreen");
-    const localCode = $("localCode");
-    const peerCode = $("peerCode");
-    const errorElement = $("error");
-    const messagesElement = $("messages");
-    const messageInput = $("message");
-    const sendButton = $("send");
-    const offlineNotice = $("offlineNotice");
-
-    let conversations = [];
-    let activeId = null;
-    let nextId = 1;
-
-    function activeConversation() {
-      return conversations.find((c) => c.id === activeId) || null;
-    }
-
-    function isConnected(c) {
-      return Boolean(
-        c &&
-        c.channel &&
-        c.channel.readyState === "open"
-      );
-    }
-
-    function makeConversation(name = "") {
-      const id = String(nextId++);
-
-      return {
-        id,
-        name: name || `Chat ${id}`,
-        pc: null,
-        channel: null,
-        localCode: "",
-        stage: "connecting",
-        viewChat: false,
-        messages: [],
-        draft: "",
-        makingOffer: false
-      };
-    }
-
-    function setError(message = "") {
-      errorElement.textContent = message;
-      errorElement.classList.toggle("visible", Boolean(message));
-    }
-
-    function escapeTime(timestamp) {
-      const date = new Date(timestamp);
-      if (Number.isNaN(date.getTime())) return "";
-      return date.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit"
-      });
-    }
-
-    function renderTabs() {
-      tabsElement.replaceChildren();
-
-      for (const c of conversations) {
-        const tab = document.createElement("button");
-        tab.type = "button";
-        tab.className = "tab" + (c.id === activeId ? " active" : "");
-        tab.title = c.name;
-        tab.setAttribute("aria-label", c.name);
-
-        const name = document.createElement("span");
-        name.className = "tab-name";
-        name.textContent = c.name;
-        tab.appendChild(name);
-
-        const close = document.createElement("span");
-        close.className = "tab-close";
-        close.textContent = "×";
-        close.setAttribute("role", "button");
-        close.setAttribute("aria-label", `Close ${c.name}`);
-        close.title = "Close chat";
-        tab.appendChild(close);
-
-        tab.addEventListener("click", (event) => {
-          if (event.target === close) {
-            event.stopPropagation();
-            closeConversation(c.id);
-            return;
-          }
-
-          activeId = c.id;
-          renderTabs();
-          renderActive();
-        });
-
-        tab.addEventListener("dblclick", () => {
-          const proposed = prompt("Rename this chat:", c.name);
-          if (proposed && proposed.trim()) {
-            c.name = proposed.trim().slice(0, 60);
-            renderTabs();
-          }
-        });
-
-        tabsElement.appendChild(tab);
-      }
-    }
-
-    function renderMessages(c) {
-      messagesElement.replaceChildren();
-
-      if (!c.messages.length) {
-        const empty = document.createElement("div");
-        empty.className = "empty-state";
-        empty.textContent = isConnected(c)
-          ? "Send a message to start chatting."
-          : "Your messages will appear here.";
-        messagesElement.appendChild(empty);
-        return;
-      }
-
-      for (const item of c.messages) {
-        const bubble = document.createElement("div");
-        bubble.className = "message " +
-          (item.from === "me" ? "mine" : "theirs");
-
-        const text = document.createElement("div");
-        text.textContent = item.text;
-        bubble.appendChild(text);
-
-        const time = document.createElement("span");
-        time.className = "message-time";
-        time.textContent = escapeTime(item.time);
-        bubble.appendChild(time);
-
-        messagesElement.appendChild(bubble);
-      }
-
-      messagesElement.scrollTop = messagesElement.scrollHeight;
-    }
-
-    function renderActive() {
-      const c = activeConversation();
-
-      if (!c) {
-        setupScreen.classList.remove("active");
-        chatScreen.classList.remove("active");
-        $("openChats").hidden = true;
-        $("saveChats").hidden = true;
-        return;
-      }
-
-      const showChat = Boolean(c.viewChat);
-
-      setupScreen.classList.toggle("active", !showChat);
-      chatScreen.classList.toggle("active", showChat);
-
-      // Open and Save are available in chat view, not connection setup.
-      $("openChats").hidden = !showChat;
-      $("saveChats").hidden = !showChat;
-
-      $("setupTitle").textContent = `Connect: ${c.name}`;
-      localCode.value = c.localCode || "";
-      peerCode.value = "";
-      setError("");
-
-      if (!showChat) {
-        renderQRCode(c.localCode);
-        messageInput.value = c.draft || "";
-        return;
-      }
-
-      renderMessages(c);
-
-      const connected = isConnected(c);
-      offlineNotice.classList.toggle("visible", !connected);
-      sendButton.disabled = !connected;
-
-      // Keep unsent drafts when the interface rerenders.
-      if (document.activeElement !== messageInput) {
-        messageInput.value = c.draft || "";
-      }
-
-      resizeMessageInput();
-    }
-
-    function renderQRCode(code) {
-      const target = $("qrcode");
-      target.replaceChildren();
-
-      if (!code || !window.QRCode) {
-        target.textContent = code
-          ? "QR code unavailable"
-          : "Generating code...";
-        target.style.color = "#737373";
-        target.style.fontSize = "13px";
-        return;
-      }
-
-      target.style.color = "";
-      target.style.fontSize = "";
-
-      try {
-        new QRCode(target, {
-          text: code,
-          width: 180,
-          height: 180,
-          correctLevel: QRCode.CorrectLevel.L
-        });
-      } catch (error) {
-        target.textContent = "Could not generate QR code";
-      }
-    }
-
-    function closePeer(c) {
-      if (!c) return;
-
-      try {
-        if (c.channel) {
-          c.channel.onopen = null;
-          c.channel.onclose = null;
-          c.channel.onmessage = null;
-          c.channel.onerror = null;
-          c.channel.close();
-        }
-      } catch (_) {}
-
-      try {
-        if (c.pc) {
-          c.pc.onicecandidate = null;
-          c.pc.onconnectionstatechange = null;
-          c.pc.ondatachannel = null;
-          c.pc.close();
-        }
-      } catch (_) {}
-
-      c.channel = null;
-      c.pc = null;
-    }
-
-    function waitForIceGathering(pc) {
-      if (pc.iceGatheringState === "complete") {
-        return Promise.resolve();
-      }
-
-      return new Promise((resolve) => {
-        let finished = false;
-
-        const finish = () => {
-          if (finished) return;
-          finished = true;
-          pc.removeEventListener("icegatheringstatechange", check);
-          clearTimeout(timeout);
-          resolve();
-        };
-
-        const check = () => {
-          if (pc.iceGatheringState === "complete") {
-            finish();
-          }
-        };
-
-        const timeout = setTimeout(finish, 7000);
-        pc.addEventListener("icegatheringstatechange", check);
-        check();
-      });
-    }
-
-    function setupChannel(c, channel) {
-      c.channel = channel;
-
-      channel.onopen = () => {
-        c.viewChat = true;
-        c.stage = "connected";
-        renderTabs();
-
-        if (activeId === c.id) {
-          renderActive();
-        }
-      };
-
-      channel.onmessage = (event) => {
-        c.messages.push({
-          from: "them",
-          text: String(event.data),
-          time: Date.now()
-        });
-
-        if (activeId === c.id && c.viewChat) {
-          renderMessages(c);
-        }
-      };
-
-      channel.onclose = () => {
-        if (activeId === c.id && c.viewChat) {
-          renderActive();
-        }
-      };
-
-      channel.onerror = () => {
-        if (activeId === c.id) {
-          setError("A data channel error occurred.");
-        }
-      };
-    }
-
-    function makePeer(c) {
-      closePeer(c);
-
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" }
-        ]
-      });
-
-      c.pc = pc;
-
-      pc.ondatachannel = (event) => {
-        setupChannel(c, event.channel);
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (
-          pc.connectionState === "failed" ||
-          pc.connectionState === "closed"
-        ) {
-          if (activeId === c.id && c.viewChat) {
-            renderActive();
-          }
-        }
-      };
-
-      return pc;
-    }
-
-    async function createOffer(c) {
-      try {
-        c.viewChat = false;
-        c.stage = "creating-offer";
-        c.localCode = "";
-        renderTabs();
-
-        if (activeId === c.id) {
-          renderActive();
-        }
-
-        const pc = makePeer(c);
-        const channel = pc.createDataChannel("chat");
-        setupChannel(c, channel);
-
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        await waitForIceGathering(pc);
-
-        c.localCode = JSON.stringify(pc.localDescription);
-        c.stage = "offer";
-
-        if (activeId === c.id) {
-          renderActive();
-        }
-      } catch (error) {
-        if (activeId === c.id) {
-          setError("Could not create a connection offer: " + error.message);
-        }
-      }
-    }
-
-    async function processPeerCode() {
-      const c = activeConversation();
-      if (!c) return;
-
-      const raw = peerCode.value.trim();
-      if (!raw) {
-        setError("Paste the other person's connection code first.");
-        return;
-      }
-
-      setError("");
-
-      let description;
-
-      try {
-        description = JSON.parse(raw);
-      } catch (_) {
-        setError("That code is not valid JSON. Copy the entire connection code.");
-        return;
-      }
-
-      if (
-        !description ||
-        !["offer", "answer"].includes(description.type) ||
-        typeof description.sdp !== "string"
-      ) {
-        setError("This is not a valid WebRTC offer or answer.");
-        return;
-      }
-
-      try {
-        if (description.type === "offer") {
-          // Receiving an offer makes this browser the answering peer.
-          const pc = makePeer(c);
-
-          await pc.setRemoteDescription(
-            new RTCSessionDescription(description)
-          );
-
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          await waitForIceGathering(pc);
-
-          c.localCode = JSON.stringify(pc.localDescription);
-          c.stage = "answer";
-          c.viewChat = false;
-
-          if (activeId === c.id) {
-            renderActive();
-          }
-        } else {
-          // An answer is accepted by the browser that created the offer.
-          if (!c.pc || !c.pc.localDescription ||
-              c.pc.localDescription.type !== "offer") {
-            setError(
-              "This tab has no matching offer. Start a new connection and " +
-              "exchange its offer first."
-            );
-            return;
-          }
-
-          await c.pc.setRemoteDescription(
-            new RTCSessionDescription(description)
-          );
-
-          c.stage = "connecting";
-          setError(
-            "Answer accepted. Waiting for the peer-to-peer connection..."
-          );
-        }
-      } catch (error) {
-        setError("Could not process the connection code: " + error.message);
-      }
-    }
-
-    function addNewConversation() {
-      const c = makeConversation();
-      conversations.push(c);
+      <input id="chatFile" type="file" accept=".json,application/json" hidden>
+    </div>
+  </header>
+
+  <section id="setup">
+    <h1 id="setupTitle">Create a connection</h1>
+    <p class="hint" id="setupHint">
+      Copy the connection request and send it to the other person.
+    </p>
+
+    <div class="qr-frame">
+      <div id="qrcode" aria-label="Connection QR code"></div>
+    </div>
+
+    <button class="primary" id="copy" disabled>Copy Request</button>
+
+    <div class="divider">OR PASTE CONNECTION CODE</div>
+
+    <textarea id="paste" placeholder="Paste..."
+      autocomplete="off" spellcheck="false"
+      aria-label="Paste connection code"></textarea>
+
+    <p class="error" id="error" role="status"></p>
+  </section>
+
+  <section id="chat" aria-label="Chat">
+    <div id="messages"></div>
+
+    <form class="composer" id="composer">
+      <div class="message-field">
+        <textarea id="message" rows="1"
+          placeholder="Message…" aria-label="Message" disabled></textarea>
+
+        <button id="send" type="submit"
+          aria-label="Send message" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M22 2 11 13"/>
+            <path d="m22 2-7 20-4-9-9-4Z"/>
+          </svg>
+        </button>
+      </div>
+    </form>
+  </section>
+</main>
+
+<script>
+const $ = selector => document.querySelector(selector);
+
+const tabsEl = $("#tabs");
+const setup = $("#setup");
+const chat = $("#chat");
+const paste = $("#paste");
+const copy = $("#copy");
+const qr = $("#qrcode");
+const errorEl = $("#error");
+const messagesEl = $("#messages");
+const messageInput = $("#message");
+const sendButton = $("#send");
+const fileInput = $("#chatFile");
+
+let conversations = [];
+let activeId = null;
+let nextId = 1;
+
+function newConversation(name) {
+  const number = nextId++;
+  const c = {
+    id: "c" + number,
+    name: name || "Chat " + number,
+    pc: null,
+    channel: null,
+    localCode: "",
+    stage: "starting",
+    busy: false,
+    messages: [],
+    viewChat: false
+  };
+
+  conversations.push(c);
+  return c;
+}
+
+function active() {
+  return conversations.find(c => c.id === activeId);
+}
+
+function setError(text = "") {
+  errorEl.textContent = text;
+}
+
+function setActiveError(c, text = "") {
+  if (activeId === c.id) setError(text);
+}
+
+function renderTabs() {
+  tabsEl.innerHTML = "";
+
+  conversations.forEach(c => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tab" + (c.id === activeId ? " active" : "");
+    button.textContent = c.name;
+    button.title = "Double-click to rename";
+
+    button.addEventListener("click", () => {
       activeId = c.id;
-
-      renderTabs();
       renderActive();
-      createOffer(c);
-    }
+    });
 
-    function closeConversation(id) {
-      const index = conversations.findIndex((c) => c.id === id);
-      if (index === -1) return;
+    button.addEventListener("dblclick", () => {
+      const name = prompt("Conversation name:", c.name);
 
-      const removed = conversations[index];
-      closePeer(removed);
-      conversations.splice(index, 1);
-
-      if (activeId === id) {
-        if (conversations.length) {
-          activeId = conversations[
-            Math.max(0, index - 1)
-          ].id;
-        } else {
-          const c = makeConversation();
-          conversations.push(c);
-          activeId = c.id;
-          renderTabs();
-          renderActive();
-          createOffer(c);
-          return;
-        }
+      if (name && name.trim()) {
+        c.name = name.trim().slice(0, 40);
+        renderTabs();
       }
+    });
 
-      renderTabs();
-      renderActive();
+    tabsEl.appendChild(button);
+  });
+
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "tab tab-add";
+  add.textContent = "+";
+  add.title = "New conversation";
+  add.setAttribute("aria-label", "New conversation");
+
+  add.addEventListener("click", () => {
+    const c = newConversation();
+    activeId = c.id;
+    renderActive();
+    createOffer(c);
+  });
+
+  tabsEl.appendChild(add);
+}
+
+function renderActive() {
+  const c = active();
+  if (!c) return;
+
+  renderTabs();
+  setError("");
+  paste.value = "";
+  qr.innerHTML = "";
+
+  copy.disabled = !c.localCode;
+  copy.textContent = c.stage === "answer" ? "Copy Answer" : "Copy Request";
+
+  $("#setupTitle").textContent =
+    c.stage === "answer" ? "Answer ready" : "Create a connection";
+
+  $("#setupHint").textContent =
+    c.stage === "answer"
+      ? "Copy this answer and send it back to the person who shared the request."
+      : "Send this request to the other person. They can paste it on their device.";
+
+  if (c.localCode && typeof QRCode !== "undefined") {
+    try {
+      new QRCode(qr, {
+        text: c.localCode,
+        width: 260,
+        height: 260,
+        correctLevel: QRCode.CorrectLevel.L
+      });
+    } catch {
+      setError("Could not generate QR. Use the copy button.");
+    }
+  }
+
+  const divider = $(".divider");
+
+  if (c.stage === "answer") {
+    paste.style.display = "none";
+    divider.style.display = "none";
+  } else {
+    paste.style.display = "";
+    divider.style.display = "";
+  }
+
+  setup.style.display = c.viewChat ? "none" : "block";
+  chat.style.display = c.viewChat ? "flex" : "none";
+
+  const connected = c.channel && c.channel.readyState === "open";
+  messageInput.disabled = !connected;
+  sendButton.disabled = !connected;
+
+  messageInput.value = "";
+  messageInput.style.height = "auto";
+
+  messagesEl.innerHTML = "";
+
+  if (!c.messages.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "No messages yet";
+    messagesEl.appendChild(empty);
+  } else {
+    c.messages.forEach(m => appendMessageElement(m.text, m.kind));
+  }
+
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  const isChatVisible = c.viewChat && c.channel && c.channel.readyState === "open";
+  document.getElementById("openChats").hidden = !isChatVisible;
+  document.getElementById("saveChats").hidden = !isChatVisible;
+}
+
+function appendMessageElement(text, kind) {
+  const el = document.createElement("div");
+  el.className = "message " + kind;
+  el.textContent = text;
+  messagesEl.appendChild(el);
+}
+
+function addMessage(c, text, kind) {
+  c.messages.push({ text, kind });
+
+  if (activeId === c.id) {
+    const empty = messagesEl.querySelector(".empty");
+    if (empty) empty.remove();
+
+    appendMessageElement(text, kind);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+}
+
+function makePeer(c) {
+  c.pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" }
+    ]
+  });
+
+  c.pc.onconnectionstatechange = () => {
+    if (c.pc.connectionState === "connected") {
+      c.viewChat = true;
+      if (activeId === c.id) renderActive();
+    }
+  };
+
+  c.pc.ondatachannel = event => setupChannel(c, event.channel);
+
+  return c.pc;
+}
+
+function setupChannel(c, channel) {
+  c.channel = channel;
+
+  channel.onopen = () => {
+    c.viewChat = true;
+    if (activeId === c.id) renderActive();
+  };
+
+  channel.onclose = () => {
+    // Keep the conversation history available if the connection closes.
+  };
+
+  channel.onmessage = event => {
+    addMessage(c, String(event.data), "theirs");
+  };
+}
+
+function waitForIce(c) {
+  if (c.pc.iceGatheringState === "complete") {
+    return Promise.resolve();
+  }
+
+  return new Promise(resolve => {
+    const pc = c.pc;
+    const timeout = setTimeout(resolve, 15000);
+
+    pc.addEventListener("icegatheringstatechange", function handler() {
+      if (pc.iceGatheringState === "complete") {
+        clearTimeout(timeout);
+        pc.removeEventListener("icegatheringstatechange", handler);
+        resolve();
+      }
+    });
+  });
+}
+
+function renderCode(c, code, type) {
+  c.localCode = code;
+  c.stage = type;
+
+  if (activeId === c.id) renderActive();
+}
+
+async function createOffer(c) {
+  try {
+    makePeer(c);
+    setupChannel(c, c.pc.createDataChannel("chat"));
+
+    const offer = await c.pc.createOffer();
+    await c.pc.setLocalDescription(offer);
+    await waitForIce(c);
+
+    renderCode(c, JSON.stringify(c.pc.localDescription), "offer");
+  } catch (e) {
+    setActiveError(c, "Could not create request: " + e.message);
+  }
+}
+
+async function processCode(raw) {
+  const c = active();
+
+  if (!c || c.busy || !raw.trim()) return;
+
+  let data;
+
+  try {
+    data = JSON.parse(raw.trim());
+  } catch {
+    return;
+  }
+
+  if (!data || !data.type || !data.sdp) return;
+
+  c.busy = true;
+  setActiveError(c, "");
+
+  try {
+    if (data.type === "offer" && c.stage === "offer") {
+      // Replace this tab's unused offer with the received offer.
+      if (c.pc) c.pc.close();
+
+      makePeer(c);
+      await c.pc.setRemoteDescription(data);
+
+      const answer = await c.pc.createAnswer();
+      await c.pc.setLocalDescription(answer);
+      await waitForIce(c);
+
+      c.viewChat = false;
+      renderCode(c, JSON.stringify(c.pc.localDescription), "answer");
+
+    } else if (data.type === "answer" && c.stage === "offer") {
+      await c.pc.setRemoteDescription(data);
+
+      c.viewChat = true;
+      if (activeId === c.id) renderActive();
+
+    } else {
+      setActiveError(c, "This connection code does not match the current step.");
+    }
+  } catch (e) {
+    setActiveError(c, "Could not use that code: " + e.message);
+  } finally {
+    c.busy = false;
+  }
+}
+
+copy.addEventListener("click", async () => {
+  const c = active();
+  if (!c || !c.localCode) return;
+
+  try {
+    await navigator.clipboard.writeText(c.localCode);
+
+    copy.textContent = "Copied";
+
+    setTimeout(() => {
+      if (activeId === c.id) {
+        copy.textContent =
+          c.stage === "answer" ? "Copy Answer" : "Copy Request";
+      }
+    }, 1300);
+  } catch {
+    setError("Clipboard unavailable. Copy the connection code manually.");
+  }
+});
+
+paste.addEventListener("paste", () => {
+  setTimeout(() => processCode(paste.value), 100);
+});
+
+paste.addEventListener("input", () => {
+  if (paste.value.trim().endsWith("}")) {
+    processCode(paste.value);
+  }
+});
+
+$("#composer").addEventListener("submit", event => {
+  event.preventDefault();
+
+  const c = active();
+  const text = messageInput.value.trim();
+
+  if (!c || !text || !c.channel || c.channel.readyState !== "open") return;
+
+  c.channel.send(text);
+  addMessage(c, text, "mine");
+
+  messageInput.value = "";
+  messageInput.style.height = "auto";
+  messageInput.focus();
+});
+
+messageInput.addEventListener("input", function() {
+  this.style.height = "auto";
+  this.style.height = Math.min(this.scrollHeight, 130) + "px";
+});
+
+messageInput.addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    $("#composer").requestSubmit();
+  }
+});
+
+// Export the conversation names and message histories from every tab.
+$("#saveChats").addEventListener("click", () => {
+  const backup = {
+    format: "serverless-p2p-chat",
+    version: 1,
+    savedAt: new Date().toISOString(),
+    conversations: conversations.map(c => ({
+      name: c.name,
+      messages: c.messages
+    }))
+  };
+
+  const blob = new Blob(
+    [JSON.stringify(backup, null, 2)],
+    { type: "application/json" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  a.href = url;
+  a.download = "p2p-chats.json";
+  a.click();
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+// Import a previously exported chat backup.
+$("#openChats").addEventListener("click", () => {
+  fileInput.click();
+});
+
+fileInput.addEventListener("change", async () => {
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) return;
+
+  try {
+    const backup = JSON.parse(await file.text());
+
+    if (!Array.isArray(backup.conversations)) {
+      throw new Error("This file is not a valid chat backup.");
     }
 
-    function saveChats() {
-      const backup = {
-        format: "p2p-chat-backup",
-        version: 1,
-        savedAt: new Date().toISOString(),
-        activeId,
-        conversations: conversations.map((c) => ({
-          name: c.name,
-          messages: c.messages.map((m) => ({
-            from: m.from === "me" ? "me" : "them",
-            text: String(m.text),
-            time: Number(m.time) || Date.now()
-          }))
-        }))
-      };
+    // Close old connections before replacing the tab list.
+    conversations.forEach(c => {
+      if (c.pc) c.pc.close();
+    });
 
-      const blob = new Blob(
-        [JSON.stringify(backup, null, 2)],
-        { type: "application/json" }
+    conversations = [];
+    nextId = 1;
+
+    backup.conversations.forEach(saved => {
+      const c = newConversation(
+        String(saved.name || "Chat " + nextId).slice(0, 40)
       );
 
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "p2p-chats.json";
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      c.messages = Array.isArray(saved.messages)
+        ? saved.messages
+            .filter(m =>
+              m &&
+              typeof m.text === "string" &&
+              (m.kind === "mine" || m.kind === "theirs")
+            )
+            .map(m => ({ text: m.text, kind: m.kind }))
+        : [];
+    });
+
+    if (!conversations.length) {
+      newConversation();
     }
 
-    async function openChatsFile(file) {
-      if (!file) return;
+    activeId = conversations[0].id;
+    renderTabs();
+    renderActive();
 
-      try {
-        const raw = await file.text();
-        const backup = JSON.parse(raw);
+  } catch (e) {
+    alert("Could not open chats: " + e.message);
+  } finally {
+    fileInput.value = "";
+  }
+});
 
-        if (
-          !backup ||
-          backup.format !== "p2p-chat-backup" ||
-          !Array.isArray(backup.conversations)
-        ) {
-          throw new Error("This is not a valid P2P Chat backup.");
-        }
-
-        const imported = backup.conversations.map((item) => {
-          const c = makeConversation(
-            typeof item.name === "string" && item.name.trim()
-              ? item.name.trim().slice(0, 60)
-              : ""
-          );
-
-          c.messages = Array.isArray(item.messages)
-            ? item.messages
-                .filter((m) => m && typeof m.text === "string")
-                .map((m) => ({
-                  from: m.from === "me" ? "me" : "them",
-                  text: m.text,
-                  time: Number(m.time) || Date.now()
-                }))
-            : [];
-
-          // Imported conversations remain in chat/history view.
-          // A backup does not contain a live WebRTC connection.
-          c.viewChat = true;
-          c.stage = "offline";
-          return c;
-        });
-
-        if (!imported.length) {
-          throw new Error("This backup contains no conversations.");
-        }
-
-        // Close old connections before replacing the conversation list.
-        for (const c of conversations) {
-          closePeer(c);
-        }
-
-        conversations = imported;
-
-        // Select the imported active conversation when possible.
-        const preferred = Number(backup.activeId);
-        const selected = imported.find((c) => c.id === String(preferred));
-
-        activeId = selected ? selected.id : imported[0].id;
-
-        renderTabs();
-        renderActive();
-      } catch (error) {
-        alert("Could not open chats: " + error.message);
-      } finally {
-        $("chatFile").value = "";
-      }
-    }
-
-    function sendMessage() {
-      const c = activeConversation();
-      if (!c || !isConnected(c)) return;
-
-      const text = messageInput.value.trim();
-      if (!text) return;
-
-      try {
-        c.channel.send(text);
-
-        c.messages.push({
-          from: "me",
-          text,
-          time: Date.now()
-        });
-
-        c.draft = "";
-        messageInput.value = "";
-        resizeMessageInput();
-        renderMessages(c);
-        sendButton.disabled = !isConnected(c);
-      } catch (error) {
-        setError("Could not send the message. The connection may have closed.");
-        renderActive();
-      }
-    }
-
-    function resizeMessageInput() {
-      messageInput.style.height = "auto";
-      messageInput.style.height =
-        Math.min(messageInput.scrollHeight, 140) + "px";
-    }
-
-    // Event handlers
-
-    $("newTab").addEventListener("click", addNewConversation);
-
-    $("copyCode").addEventListener("click", async () => {
-      if (!localCode.value) return;
-
-      try {
-        await navigator.clipboard.writeText(localCode.value);
-        $("copyCode").textContent = "Copied";
-        setTimeout(() => {
-          $("copyCode").textContent = "Copy code";
-        }, 1200);
-      } catch (_) {
-        localCode.focus();
-        localCode.select();
-        document.execCommand("copy");
-      }
-    });
-
-    $("processCode").addEventListener("click", processPeerCode);
-
-    $("openChats").addEventListener("click", () => {
-      // Do not change the active tab or view when opening the file picker.
-      $("chatFile").click();
-    });
-
-    $("chatFile").addEventListener("change", (event) => {
-      const file = event.target.files && event.target.files[0];
-      if (file) openChatsFile(file);
-    });
-
-    $("saveChats").addEventListener("click", saveChats);
-
-    $("reconnect").addEventListener("click", () => {
-      const c = activeConversation();
-      if (!c) return;
-
-      // Reconnection is an explicit action, not an automatic side effect
-      // of opening a saved backup.
-      c.viewChat = false;
-      c.stage = "connecting";
-      renderActive();
-      createOffer(c);
-    });
-
-    $("composer").addEventListener("submit", (event) => {
-      event.preventDefault();
-      sendMessage();
-    });
-
-    messageInput.addEventListener("input", () => {
-      const c = activeConversation();
-      if (c) c.draft = messageInput.value;
-
-      resizeMessageInput();
-      sendButton.disabled = !isConnected(c);
-    });
-
-    messageInput.addEventListener("keydown", (event) => {
-      if (
-        event.key === "Enter" &&
-        !event.shiftKey &&
-        !event.isComposing
-      ) {
-        event.preventDefault();
-        sendMessage();
-      }
-    });
-
-    // Start with one conversation and create its offer.
-    addNewConversation();
-  </script>
+// Start with one conversation.
+const first = newConversation("Chat 1");
+activeId = first.id;
+renderActive();
+createOffer(first);
+</script>
 </body>
 </html>
