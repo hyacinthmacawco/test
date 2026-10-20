@@ -1,0 +1,189 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Serverless P2P Chat</title>
+  <style>
+    body {
+      font: 16px system-ui;
+      max-width: 650px;
+      margin: 30px auto;
+      padding: 16px;
+      background: #f4f6f8;
+    }
+    section {
+      background: white;
+      padding: 16px;
+      border-radius: 12px;
+      margin: 14px 0;
+    }
+    textarea, input, button {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 12px;
+      margin: 6px 0;
+      font: inherit;
+    }
+    textarea { min-height: 100px; }
+    button { cursor: pointer; }
+    #messages {
+      min-height: 100px;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+    #status { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>P2P Chat</h1>
+  <p id="status">Not connected</p>
+
+  <section>
+    <h2>1. Create or accept a connection</h2>
+    <button id="create">Create offer (User A)</button>
+    <textarea id="local" placeholder="Your offer or answer appears here"></textarea>
+    <button id="copy">Copy my code</button>
+
+    <textarea id="remote" placeholder="Paste the other user's code here"></textarea>
+    <button id="accept">Accept offer (User B)</button>
+    <button id="answer">Apply answer (User A)</button>
+  </section>
+
+  <section>
+    <h2>2. Chat</h2>
+    <div id="messages"></div>
+    <input id="message" placeholder="Write a message">
+    <button id="send">Send message</button>
+  </section>
+
+<script>
+const statusEl = document.querySelector("#status");
+const localEl = document.querySelector("#local");
+const remoteEl = document.querySelector("#remote");
+const messages = document.querySelector("#messages");
+
+let pc;
+let channel;
+
+function setupConnection() {
+  pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" }
+    ]
+  });
+
+  pc.onconnectionstatechange = () => {
+    statusEl.textContent = "Connection: " + pc.connectionState;
+  };
+
+  pc.ondatachannel = event => {
+    setupChannel(event.channel);
+  };
+
+  return pc;
+}
+
+function setupChannel(ch) {
+  channel = ch;
+
+  channel.onopen = () => {
+    statusEl.textContent = "Connected — ready to chat";
+  };
+
+  channel.onclose = () => {
+    statusEl.textContent = "Chat disconnected";
+  };
+
+  channel.onmessage = event => {
+    messages.textContent += "\nThem: " + event.data;
+  };
+}
+
+function waitForIce() {
+  if (pc.iceGatheringState === "complete") {
+    return Promise.resolve();
+  }
+
+  return new Promise(resolve => {
+    pc.addEventListener("icegatheringstatechange", () => {
+      if (pc.iceGatheringState === "complete") resolve();
+    });
+  });
+}
+
+document.querySelector("#create").onclick = async () => {
+  try {
+    setupConnection();
+    setupChannel(pc.createDataChannel("chat"));
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await waitForIce();
+
+    localEl.value = JSON.stringify(pc.localDescription);
+    statusEl.textContent = "Offer ready to share";
+  } catch (e) {
+    statusEl.textContent = "Error: " + e.message;
+  }
+};
+
+document.querySelector("#accept").onclick = async () => {
+  try {
+    setupConnection();
+
+    const offer = JSON.parse(remoteEl.value);
+    await pc.setRemoteDescription(offer);
+
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await waitForIce();
+
+    localEl.value = JSON.stringify(pc.localDescription);
+    statusEl.textContent = "Answer ready — send it to User A";
+  } catch (e) {
+    statusEl.textContent = "Error: " + e.message;
+  }
+};
+
+document.querySelector("#answer").onclick = async () => {
+  try {
+    if (!pc) throw new Error("Create an offer first");
+
+    await pc.setRemoteDescription(
+      JSON.parse(remoteEl.value)
+    );
+
+    statusEl.textContent = "Answer applied; connecting...";
+  } catch (e) {
+    statusEl.textContent = "Error: " + e.message;
+  }
+};
+
+document.querySelector("#copy").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(localEl.value);
+    statusEl.textContent = "Connection code copied";
+  } catch {
+    statusEl.textContent = "Select the code and copy it manually";
+  }
+};
+
+document.querySelector("#send").onclick = () => {
+  const input = document.querySelector("#message");
+
+  if (!channel || channel.readyState !== "open") {
+    statusEl.textContent = "Not connected yet";
+    return;
+  }
+
+  if (!input.value.trim()) return;
+
+  channel.send(input.value);
+  messages.textContent += "\nYou: " + input.value;
+  input.value = "";
+};
+</script>
+</body>
+</html>
