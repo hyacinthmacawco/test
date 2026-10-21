@@ -1,3 +1,6 @@
+
+import { createP2P } from "./p2p.js";
+
 const $ = selector => document.querySelector(selector);
 
 const tabsEl = $("#tabs");
@@ -18,17 +21,40 @@ let nextId = 1;
 
 function newConversation(name) {
   const number = nextId++;
+
   const c = {
     id: "c" + number,
     name: name || "Chat " + number,
-    pc: null,
-    channel: null,
+    p2p: null,
     localCode: "",
     stage: "starting",
     busy: false,
     messages: [],
-    viewChat: false
+    viewChat: false,
+    connected: false
   };
+
+  c.p2p = createP2P({
+    onMessage: text => addMessage(c, text, "theirs"),
+
+    onLocalCode: (code, type) => {
+      c.localCode = code;
+      c.stage = type;
+      c.viewChat = false;
+
+      if (activeId === c.id) renderActive();
+    },
+
+    onConnectionState: state => {
+      c.connected = state.connected;
+
+      if (state.connected) c.viewChat = true;
+
+      if (activeId === c.id) renderActive();
+    },
+
+    onError: text => setActiveError(c, text)
+  });
 
   conversations.push(c);
   return c;
@@ -52,7 +78,8 @@ function renderTabs() {
   conversations.forEach(c => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "tab" + (c.id === activeId ? " active" : "");
+    button.className =
+      "tab" + (c.id === activeId ? " active" : "");
     button.textContent = c.name;
     button.title = "Double-click to rename";
 
@@ -84,7 +111,7 @@ function renderTabs() {
     const c = newConversation();
     activeId = c.id;
     renderActive();
-    createOffer(c);
+    c.p2p.createOffer();
   });
 
   tabsEl.appendChild(add);
@@ -100,7 +127,8 @@ function renderActive() {
   qr.innerHTML = "";
 
   copy.disabled = !c.localCode;
-  copy.textContent = c.stage === "answer" ? "Copy Answer" : "Copy Request";
+  copy.textContent =
+    c.stage === "answer" ? "Copy Answer" : "Copy Request";
 
   $("#setupTitle").textContent =
     c.stage === "answer" ? "Answer ready" : "Create a connection";
@@ -136,13 +164,17 @@ function renderActive() {
   setup.style.display = c.viewChat ? "none" : "block";
   chat.style.display = c.viewChat ? "flex" : "none";
 
-  const connected = c.channel && c.channel.readyState === "open";
+  const connected = c.p2p.isConnected();
+
   messageInput.disabled = !connected;
   sendButton.disabled = !connected;
 
+  const isChatVisible = c.viewChat && connected;
+  $("#openChats").hidden = !isChatVisible;
+  $("#saveChats").hidden = !isChatVisible;
+
   messageInput.value = "";
   messageInput.style.height = "auto";
-
   messagesEl.innerHTML = "";
 
   if (!c.messages.length) {
@@ -155,10 +187,6 @@ function renderActive() {
   }
 
   messagesEl.scrollTop = messagesEl.scrollHeight;
-
-  const isChatVisible = c.viewChat && c.channel && c.channel.readyState === "open";
-  document.getElementById("openChats").hidden = !isChatVisible;
-  document.getElementById("saveChats").hidden = !isChatVisible;
 }
 
 function appendMessageElement(text, kind) {
@@ -180,139 +208,12 @@ function addMessage(c, text, kind) {
   }
 }
 
-function makePeer(c) {
-  c.pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" }
-    ]
-  });
-
-  c.pc.onconnectionstatechange = () => {
-    if (c.pc.connectionState === "connected") {
-      c.viewChat = true;
-      if (activeId === c.id) renderActive();
-    }
-  };
-
-  c.pc.ondatachannel = event => setupChannel(c, event.channel);
-
-  return c.pc;
-}
-
-function setupChannel(c, channel) {
-  c.channel = channel;
-
-  channel.onopen = () => {
-    c.viewChat = true;
-    if (activeId === c.id) renderActive();
-  };
-
-  channel.onclose = () => {
-    // Keep the conversation history available if the connection closes.
-  };
-
-  channel.onmessage = event => {
-    addMessage(c, String(event.data), "theirs");
-  };
-}
-
-function waitForIce(c) {
-  if (c.pc.iceGatheringState === "complete") {
-    return Promise.resolve();
-  }
-
-  return new Promise(resolve => {
-    const pc = c.pc;
-    const timeout = setTimeout(resolve, 15000);
-
-    pc.addEventListener("icegatheringstatechange", function handler() {
-      if (pc.iceGatheringState === "complete") {
-        clearTimeout(timeout);
-        pc.removeEventListener("icegatheringstatechange", handler);
-        resolve();
-      }
-    });
-  });
-}
-
-function renderCode(c, code, type) {
-  c.localCode = code;
-  c.stage = type;
-
-  if (activeId === c.id) renderActive();
-}
-
-async function createOffer(c) {
-  try {
-    makePeer(c);
-    setupChannel(c, c.pc.createDataChannel("chat"));
-
-    const offer = await c.pc.createOffer();
-    await c.pc.setLocalDescription(offer);
-    await waitForIce(c);
-
-    renderCode(c, JSON.stringify(c.pc.localDescription), "offer");
-  } catch (e) {
-    setActiveError(c, "Could not create request: " + e.message);
-  }
-}
-
-async function processCode(raw) {
-  const c = active();
-
-  if (!c || c.busy || !raw.trim()) return;
-
-  let data;
-
-  try {
-    data = JSON.parse(raw.trim());
-  } catch {
-    return;
-  }
-
-  if (!data || !data.type || !data.sdp) return;
-
-  c.busy = true;
-  setActiveError(c, "");
-
-  try {
-    if (data.type === "offer" && c.stage === "offer") {
-      // Replace this tab's unused offer with the received offer.
-      if (c.pc) c.pc.close();
-
-      makePeer(c);
-      await c.pc.setRemoteDescription(data);
-
-      const answer = await c.pc.createAnswer();
-      await c.pc.setLocalDescription(answer);
-      await waitForIce(c);
-
-      c.viewChat = false;
-      renderCode(c, JSON.stringify(c.pc.localDescription), "answer");
-
-    } else if (data.type === "answer" && c.stage === "offer") {
-      await c.pc.setRemoteDescription(data);
-
-      c.viewChat = true;
-      if (activeId === c.id) renderActive();
-
-    } else {
-      setActiveError(c, "This connection code does not match the current step.");
-    }
-  } catch (e) {
-    setActiveError(c, "Could not use that code: " + e.message);
-  } finally {
-    c.busy = false;
-  }
-}
-
 copy.addEventListener("click", async () => {
   const c = active();
   if (!c || !c.localCode) return;
 
   try {
     await navigator.clipboard.writeText(c.localCode);
-
     copy.textContent = "Copied";
 
     setTimeout(() => {
@@ -326,13 +227,27 @@ copy.addEventListener("click", async () => {
   }
 });
 
+async function handlePaste() {
+  const c = active();
+  if (!c || c.busy || !paste.value.trim()) return;
+
+  c.busy = true;
+  setError("");
+
+  try {
+    await c.p2p.processCode(paste.value, c.stage);
+  } finally {
+    c.busy = false;
+  }
+}
+
 paste.addEventListener("paste", () => {
-  setTimeout(() => processCode(paste.value), 100);
+  setTimeout(handlePaste, 100);
 });
 
 paste.addEventListener("input", () => {
   if (paste.value.trim().endsWith("}")) {
-    processCode(paste.value);
+    handlePaste();
   }
 });
 
@@ -342,14 +257,18 @@ $("#composer").addEventListener("submit", event => {
   const c = active();
   const text = messageInput.value.trim();
 
-  if (!c || !text || !c.channel || c.channel.readyState !== "open") return;
+  if (!c || !text || !c.p2p.isConnected()) return;
 
-  c.channel.send(text);
-  addMessage(c, text, "mine");
+  try {
+    c.p2p.sendMessage(text);
+    addMessage(c, text, "mine");
 
-  messageInput.value = "";
-  messageInput.style.height = "auto";
-  messageInput.focus();
+    messageInput.value = "";
+    messageInput.style.height = "auto";
+    messageInput.focus();
+  } catch (error) {
+    setActiveError(c, error.message);
+  }
 });
 
 messageInput.addEventListener("input", function() {
@@ -364,7 +283,7 @@ messageInput.addEventListener("keydown", event => {
   }
 });
 
-// Export the conversation names and message histories from every tab.
+// Export the conversation names and message histories.
 $("#saveChats").addEventListener("click", () => {
   const backup = {
     format: "serverless-p2p-chat",
@@ -391,7 +310,7 @@ $("#saveChats").addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 
-// Import a previously exported chat backup.
+// Open a previously exported chat backup.
 $("#openChats").addEventListener("click", () => {
   fileInput.click();
 });
@@ -407,10 +326,7 @@ fileInput.addEventListener("change", async () => {
       throw new Error("This file is not a valid chat backup.");
     }
 
-    // Close old connections before replacing the tab list.
-    conversations.forEach(c => {
-      if (c.pc) c.pc.close();
-    });
+    conversations.forEach(c => c.p2p.close());
 
     conversations = [];
     nextId = 1;
@@ -431,16 +347,12 @@ fileInput.addEventListener("change", async () => {
         : [];
     });
 
-    if (!conversations.length) {
-      newConversation();
-    }
+    if (!conversations.length) newConversation();
 
     activeId = conversations[0].id;
-    renderTabs();
     renderActive();
-
-  } catch (e) {
-    alert("Could not open chats: " + e.message);
+  } catch (error) {
+    alert("Could not open chats: " + error.message);
   } finally {
     fileInput.value = "";
   }
@@ -450,4 +362,4 @@ fileInput.addEventListener("change", async () => {
 const first = newConversation("Chat 1");
 activeId = first.id;
 renderActive();
-createOffer(first);
+first.p2p.createOffer();
