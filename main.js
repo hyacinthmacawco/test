@@ -3,7 +3,6 @@ import { createP2P } from "./p2p.js";
 
 const $ = selector => document.querySelector(selector);
 
-const tabsEl = $("#tabs");
 const setup = $("#setup");
 const chat = $("#chat");
 const paste = $("#paste");
@@ -11,23 +10,44 @@ const copy = $("#copy");
 const qr = $("#qrcode");
 const errorEl = $("#error");
 const messagesEl = $("#messages");
-const messageInput = $("#message");
-const sendButton = $("#send");
 const fileInput = $("#chatFile");
+const composeView = $("#composeView");
+const composeText = $("#composeText");
+
+const domainTypes = ["General", "Personal", "Work", "Link"];
 
 let conversations = [];
 let activeId = null;
 let nextId = 1;
+
+let mainUsers = new Set(["__mine__"]);
+let composeUsers = new Set();
+
+let mainDomains = new Set();
+let composeDomains = new Set();
+
+let timeFilter = "all";
+let versions = [];
+let selectedVersions = new Set();
+let composerOpen = false;
+
+function active() {
+  return conversations.find(c => c.id === activeId);
+}
+
+function setError(message = "") {
+  errorEl.textContent = message;
+}
 
 function newConversation(name) {
   const number = nextId++;
 
   const c = {
     id: "c" + number,
-    name: name || "Chat " + number,
+    name: name || "User " + number,
     p2p: null,
     localCode: "",
-    stage: "starting",
+    stage: "offer",
     busy: false,
     messages: [],
     viewChat: false,
@@ -35,98 +55,185 @@ function newConversation(name) {
   };
 
   c.p2p = createP2P({
-    onMessage: text => addMessage(c, text, "theirs"),
+    onMessage: payload => {
+      let message;
+
+      try {
+        const data = JSON.parse(payload);
+
+        if (
+          data &&
+          data.kind === "chat-message" &&
+          typeof data.text === "string"
+        ) {
+          message = {
+            text: data.text,
+            domain: domainTypes.includes(data.domain)
+              ? data.domain
+              : "General",
+            kind: "theirs",
+            timestamp: Number(data.timestamp) || Date.now()
+          };
+        }
+      } catch {}
+
+      if (!message) {
+        message = {
+          text: payload,
+          domain: "General",
+          kind: "theirs",
+          timestamp: Date.now()
+        };
+      }
+
+      addMessage(c, message);
+    },
 
     onLocalCode: (code, type) => {
       c.localCode = code;
       c.stage = type;
       c.viewChat = false;
 
-      if (activeId === c.id) renderActive();
+      if (activeId === c.id) render();
     },
 
     onConnectionState: state => {
       c.connected = state.connected;
 
-      if (state.connected) c.viewChat = true;
+      if (state.connected) {
+        c.viewChat = true;
+      }
 
-      if (activeId === c.id) renderActive();
+      if (activeId === c.id) render();
+
+      renderFilters();
     },
 
-    onError: text => setActiveError(c, text)
+    onError: message => {
+      if (activeId === c.id) setError(message);
+    }
   });
 
   conversations.push(c);
+
+  if (composeUsers.size === 0) {
+    composeUsers.add(c.id);
+  }
+
+  mainUsers.add(c.id);
+
   return c;
 }
 
-function active() {
-  return conversations.find(c => c.id === activeId);
-}
-
-function setError(text = "") {
-  errorEl.textContent = text;
-}
-
-function setActiveError(c, text = "") {
-  if (activeId === c.id) setError(text);
-}
-
-function renderTabs() {
-  tabsEl.innerHTML = "";
-
-  conversations.forEach(c => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className =
-      "tab" + (c.id === activeId ? " active" : "");
-    button.textContent = c.name;
-    button.title = "Double-click to rename";
-
-    button.addEventListener("click", () => {
-      activeId = c.id;
-      renderActive();
-    });
-
-    button.addEventListener("dblclick", () => {
-      const name = prompt("Conversation name:", c.name);
-
-      if (name && name.trim()) {
-        c.name = name.trim().slice(0, 40);
-        renderTabs();
-      }
-    });
-
-    tabsEl.appendChild(button);
+function addMessage(c, message) {
+  c.messages.push({
+    ...message,
+    timestamp: Number(message.timestamp) || Date.now()
   });
 
-  const add = document.createElement("button");
-  add.type = "button";
-  add.className = "tab tab-add";
-  add.textContent = "+";
-  add.title = "New conversation";
-  add.setAttribute("aria-label", "New conversation");
+  // Sort and render messages in chronological order.
+  c.messages.sort((a, b) => a.timestamp - b.timestamp);
 
-  add.addEventListener("click", () => {
-    const c = newConversation();
-    activeId = c.id;
-    renderActive();
-    c.p2p.createOffer();
-  });
+  if (activeId === c.id) {
+    renderMessages();
+  }
 
-  tabsEl.appendChild(add);
+  renderFilters();
 }
 
-function renderActive() {
+function getVisibleMessages() {
+  const now = Date.now();
+
+  const cutoff = {
+    all: 0,
+    hour: now - 60 * 60 * 1000,
+    day: now - 24 * 60 * 60 * 1000,
+    week: now - 7 * 24 * 60 * 60 * 1000
+  }[timeFilter];
+
+  return conversations
+    .flatMap(c =>
+      c.messages.map((m, index) => ({
+        ...m,
+        userId: c.id,
+        userName: c.name,
+        index
+      }))
+    )
+    .filter(m =>
+      mainUsers.has(m.kind === "mine" ? "__mine__" : m.userId)
+    )
+    .filter(m =>
+      mainDomains.size === 0 ||
+      mainDomains.has(m.domain || "General")
+    )
+    .filter(m => m.timestamp >= cutoff)
+    .sort((a, b) =>
+      a.timestamp - b.timestamp || a.index - b.index
+    );
+}
+
+function renderMessages() {
+  const wasNearBottom =
+    messagesEl.scrollHeight -
+    messagesEl.scrollTop -
+    messagesEl.clientHeight < 80;
+
+  messagesEl.replaceChildren();
+
+  const fragment = document.createDocumentFragment();
+
+  for (const message of getVisibleMessages()) {
+    const article = document.createElement("article");
+    article.className =
+      "message " +
+      (message.kind === "mine" ? "mine" : "theirs");
+
+    const meta = document.createElement("div");
+    meta.className = "message-meta";
+
+    meta.textContent =
+      (message.kind === "mine" ? "You" : message.userName) +
+      " · " +
+      (message.domain || "General") +
+      " · " +
+      new Date(message.timestamp).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+
+    const body = document.createElement("div");
+    body.className = "message-body";
+    body.textContent = message.text;
+
+    article.append(meta, body);
+    fragment.appendChild(article);
+  }
+
+  messagesEl.appendChild(fragment);
+
+  // Keep the newest messages at the bottom.
+  // New messages force a scroll to the bottom.
+  if (wasNearBottom || messagesEl.scrollHeight > 0) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+}
+
+function render() {
   const c = active();
+
   if (!c) return;
 
-  renderTabs();
-  setError("");
-  paste.value = "";
-  qr.innerHTML = "";
+  setup.hidden = c.viewChat && c.connected;
+  chat.hidden = !(c.viewChat && c.connected);
+
+  composeView.hidden = !composerOpen;
+  $("#timeToolbar").hidden = composerOpen;
+
+  document.body.classList.toggle("composer-open", composerOpen);
 
   copy.disabled = !c.localCode;
+
   copy.textContent =
     c.stage === "answer" ? "Copy Answer" : "Copy Request";
 
@@ -135,8 +242,10 @@ function renderActive() {
 
   $("#setupHint").textContent =
     c.stage === "answer"
-      ? "Copy this answer and send it back to the person who shared the request."
-      : "Send this request to the other person. They can paste it on their device.";
+      ? "Copy this answer and send it to the person who shared the request."
+      : "Send this request to the other person.";
+
+  qr.replaceChildren();
 
   if (c.localCode && typeof QRCode !== "undefined") {
     try {
@@ -151,84 +260,187 @@ function renderActive() {
     }
   }
 
-  const divider = $(".divider");
+  paste.hidden = c.stage === "answer";
+  $(".divider").hidden = c.stage === "answer";
 
-  if (c.stage === "answer") {
-    paste.style.display = "none";
-    divider.style.display = "none";
-  } else {
-    paste.style.display = "";
-    divider.style.display = "";
-  }
-
-  setup.style.display = c.viewChat ? "none" : "block";
-  chat.style.display = c.viewChat ? "flex" : "none";
-
-  const connected = c.p2p.isConnected();
-
-  messageInput.disabled = !connected;
-  sendButton.disabled = !connected;
-
-  const isChatVisible = c.viewChat && connected;
-  $("#openChats").hidden = !isChatVisible;
-  $("#saveChats").hidden = !isChatVisible;
-
-  messageInput.value = "";
-  messageInput.style.height = "auto";
-  messagesEl.innerHTML = "";
-
-  if (!c.messages.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = "No messages yet";
-    messagesEl.appendChild(empty);
-  } else {
-    c.messages.forEach(m => appendMessageElement(m.text, m.kind));
-  }
-
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+  renderMessages();
+  renderFilters();
+  renderDomainButtons();
 }
 
-function appendMessageElement(text, kind) {
-  const el = document.createElement("div");
-  el.className = "message " + kind;
-  el.textContent = text;
-  messagesEl.appendChild(el);
-}
+function renderCheckboxMenu(container, options, selected, changed) {
+  container.replaceChildren();
 
-function addMessage(c, text, kind) {
-  c.messages.push({ text, kind });
+  for (const option of options) {
+    const label = document.createElement("label");
+    label.className = "check-option";
 
-  if (activeId === c.id) {
-    const empty = messagesEl.querySelector(".empty");
-    if (empty) empty.remove();
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = selected.has(option.id);
 
-    appendMessageElement(text, kind);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    input.addEventListener("change", () => {
+      const next = new Set(selected);
+
+      if (input.checked) {
+        next.add(option.id);
+      } else {
+        next.delete(option.id);
+      }
+
+      changed(next);
+    });
+
+    const span = document.createElement("span");
+    span.textContent = option.label;
+
+    label.append(input, span);
+    container.appendChild(label);
   }
 }
 
+function renderFilters() {
+  const userOptions = [
+    { id: "__mine__", label: "You" },
+    ...conversations.map(c => ({
+      id: c.id,
+      label: c.name + (c.connected ? "" : " (not connected)")
+    }))
+  ];
+
+  renderCheckboxMenu(
+    $("#userMenu"),
+    userOptions,
+    mainUsers,
+    next => {
+      mainUsers = next;
+      renderMessages();
+    }
+  );
+
+  renderCheckboxMenu(
+    $("#composeUserMenu"),
+    conversations.map(c => ({
+      id: c.id,
+      label: c.name + (c.connected ? "" : " (not connected)")
+    })),
+    composeUsers,
+    next => {
+      composeUsers = next;
+    }
+  );
+}
+
+function renderDomainMenu(container, selected, changed) {
+  renderCheckboxMenu(
+    container,
+    domainTypes.map(domain => ({
+      id: domain,
+      label: domain
+    })),
+    selected,
+    changed
+  );
+}
+
+function renderDomainButtons() {
+  renderDomainMenu($("#domainMenu"), mainDomains, next => {
+    mainDomains = next;
+    renderMessages();
+  });
+
+  renderDomainMenu(
+    $("#composeDomainMenu"),
+    composeDomains,
+    next => {
+      composeDomains = next;
+    }
+  );
+}
+
+function toggleMenu(id) {
+  const menu = $("#" + id);
+
+  document.querySelectorAll(".filter-menu").forEach(item => {
+    if (item !== menu) item.hidden = true;
+  });
+
+  menu.hidden = !menu.hidden;
+}
+
+document.querySelectorAll("[data-menu]").forEach(button => {
+  button.addEventListener("click", () => {
+    let menuId = button.dataset.menu;
+
+    if (composerOpen && menuId === "userMenu") {
+      menuId = "composeUserMenu";
+    }
+
+    if (composerOpen && menuId === "domainMenu") {
+      menuId = "composeDomainMenu";
+    }
+
+    toggleMenu(menuId);
+  });
+});
+
+document.addEventListener("click", event => {
+  if (!event.target.closest(".toolbar-item")) {
+    document.querySelectorAll(".filter-menu").forEach(menu => {
+      menu.hidden = true;
+    });
+  }
+});
+
+// Time filter
+$("#timeMenu").querySelectorAll("[data-time]").forEach(button => {
+  button.addEventListener("click", () => {
+    timeFilter = button.dataset.time;
+    $("#timeMenu").hidden = true;
+    renderMessages();
+  });
+});
+
+// Create a new connection
+$("#addUser").addEventListener("click", () => {
+  const c = newConversation();
+
+  activeId = c.id;
+  composerOpen = false;
+
+  setError("");
+  render();
+
+  c.p2p.createOffer();
+});
+
+$("#newConnection").addEventListener("click", () => {
+  const c = active();
+
+  if (!c) return;
+
+  c.viewChat = c.connected;
+  render();
+});
+
+// Copy offer or answer
 copy.addEventListener("click", async () => {
   const c = active();
+
   if (!c || !c.localCode) return;
 
   try {
     await navigator.clipboard.writeText(c.localCode);
     copy.textContent = "Copied";
-
-    setTimeout(() => {
-      if (activeId === c.id) {
-        copy.textContent =
-          c.stage === "answer" ? "Copy Answer" : "Copy Request";
-      }
-    }, 1300);
   } catch {
     setError("Clipboard unavailable. Copy the connection code manually.");
   }
 });
 
+// Process pasted connection data
 async function handlePaste() {
   const c = active();
+
   if (!c || c.busy || !paste.value.trim()) return;
 
   c.busy = true;
@@ -236,6 +448,8 @@ async function handlePaste() {
 
   try {
     await c.p2p.processCode(paste.value, c.stage);
+  } catch (error) {
+    setError(error.message || "Could not process connection code.");
   } finally {
     c.busy = false;
   }
@@ -246,77 +460,266 @@ paste.addEventListener("paste", () => {
 });
 
 paste.addEventListener("input", () => {
-  if (paste.value.trim().endsWith("}")) {
-    handlePaste();
-  }
+  if (paste.value.trim().endsWith("}")) handlePaste();
 });
 
-$("#composer").addEventListener("submit", event => {
+// Full-screen composer
+function openComposer() {
+  composerOpen = true;
+
+  composeText.value = "";
+  $("#composeError").textContent = "";
+
+  render();
+  composeText.focus();
+}
+
+function closeComposer() {
+  composerOpen = false;
+  render();
+}
+
+$("#composeOpen").addEventListener("click", openComposer);
+$("#composeClose").addEventListener("click", closeComposer);
+
+// Send to all selected connected users.
+// If multiple domain types are selected, create one message
+// per selected domain type.
+$("#composeForm").addEventListener("submit", event => {
   event.preventDefault();
 
-  const c = active();
-  const text = messageInput.value.trim();
+  const text = composeText.value.trim();
 
-  if (!c || !text || !c.p2p.isConnected()) return;
+  const recipients = conversations.filter(c =>
+    composeUsers.has(c.id) &&
+    c.p2p.isConnected()
+  );
 
-  try {
-    c.p2p.sendMessage(text);
-    addMessage(c, text, "mine");
+  if (!text) return;
 
-    messageInput.value = "";
-    messageInput.style.height = "auto";
-    messageInput.focus();
-  } catch (error) {
-    setActiveError(c, error.message);
+  if (!recipients.length) {
+    $("#composeError").textContent =
+      "Select at least one connected user.";
+    return;
+  }
+
+  const domains = composeDomains.size
+    ? [...composeDomains]
+    : ["General"];
+
+  const timestamp = Date.now();
+  let sent = 0;
+
+  for (const domain of domains) {
+    const payload = JSON.stringify({
+      kind: "chat-message",
+      text,
+      domain,
+      timestamp
+    });
+
+    for (const c of recipients) {
+      try {
+        c.p2p.sendMessage(payload);
+
+        addMessage(c, {
+          text,
+          domain,
+          kind: "mine",
+          timestamp
+        });
+
+        sent++;
+      } catch (error) {
+        $("#composeError").textContent =
+          error.message || "Could not send message.";
+      }
+    }
+  }
+
+  if (sent) {
+    composeText.value = "";
+    $("#composeError").textContent = "";
+    closeComposer();
   }
 });
 
-messageInput.addEventListener("input", function() {
-  this.style.height = "auto";
-  this.style.height = Math.min(this.scrollHeight, 130) + "px";
-});
-
-messageInput.addEventListener("keydown", event => {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    $("#composer").requestSubmit();
-  }
-});
-
-// Export the conversation names and message histories.
-$("#saveChats").addEventListener("click", () => {
-  const backup = {
-    format: "serverless-p2p-chat",
-    version: 1,
-    savedAt: new Date().toISOString(),
-    conversations: conversations.map(c => ({
-      name: c.name,
-      messages: c.messages
-    }))
-  };
-
+// Export and import helpers
+function downloadJSON(data, filename) {
   const blob = new Blob(
-    [JSON.stringify(backup, null, 2)],
+    [JSON.stringify(data, null, 2)],
     { type: "application/json" }
   );
 
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
+  const link = document.createElement("a");
 
-  a.href = url;
-  a.download = "p2p-chats.json";
-  a.click();
+  link.href = url;
+  link.download = filename;
+  link.click();
 
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function snapshot(name) {
+  return {
+    id: "v" + Date.now() + "-" +
+      Math.random().toString(36).slice(2, 7),
+    name: name || new Date().toLocaleString(),
+    savedAt: new Date().toISOString(),
+
+    conversations: conversations.map(c => ({
+      name: c.name,
+      messages: c.messages.map(m => ({ ...m }))
+    }))
+  };
+}
+
+function renderVersions() {
+  const container = $("#versionList");
+  container.replaceChildren();
+
+  for (const version of versions) {
+    const label = document.createElement("label");
+    label.className = "check-option";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = selectedVersions.has(version.id);
+
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        selectedVersions.add(version.id);
+      } else {
+        selectedVersions.delete(version.id);
+      }
+
+      renderVersions();
+    });
+
+    const span = document.createElement("span");
+    span.textContent =
+      version.name + " (" +
+      new Date(version.savedAt).toLocaleString() + ")";
+
+    label.append(input, span);
+    container.appendChild(label);
+  }
+}
+
+$("#saveVersion").addEventListener("click", () => {
+  const name = prompt(
+    "Version name:",
+    "Version " + (versions.length + 1)
+  );
+
+  if (name === null) return;
+
+  const version = snapshot(
+    name.trim() || "Version " + (versions.length + 1)
+  );
+
+  versions.unshift(version);
+  selectedVersions = new Set([version.id]);
+
+  renderVersions();
 });
 
-// Open a previously exported chat backup.
+$("#exportChats").addEventListener("click", () => {
+  downloadJSON({
+    format: "serverless-p2p-chat",
+    version: 2,
+    savedAt: new Date().toISOString(),
+
+    conversations: conversations.map(c => ({
+      name: c.name,
+      messages: c.messages.map(m => ({ ...m }))
+    }))
+  }, "p2p-chats.json");
+});
+
 $("#openChats").addEventListener("click", () => {
   fileInput.click();
 });
 
+$("#openSelectedVersions").addEventListener("click", () => {
+  const chosen = versions.filter(v =>
+    selectedVersions.has(v.id)
+  );
+
+  if (!chosen.length) {
+    $("#versionError").textContent =
+      "Select one or more versions first.";
+    return;
+  }
+
+  const merged = new Map();
+
+  // Merge selected snapshots in chronological selection order.
+  for (const version of [...chosen].reverse()) {
+    for (const saved of version.conversations || []) {
+      const key = saved.name || "Chat";
+
+      if (!merged.has(key)) merged.set(key, []);
+
+      for (const message of saved.messages || []) {
+        merged.get(key).push(message);
+      }
+    }
+  }
+
+  replaceConversations(
+    [...merged.entries()].map(([name, messages]) => ({
+      name,
+      messages
+    }))
+  );
+
+  $("#versionMenu").hidden = true;
+});
+
+function replaceConversations(savedConversations) {
+  conversations.forEach(c => c.p2p.close());
+
+  conversations = [];
+  nextId = 1;
+
+  mainUsers = new Set(["__mine__"]);
+  composeUsers = new Set();
+
+  for (const saved of savedConversations) {
+    const c = newConversation(
+      String(saved.name || "User " + nextId).slice(0, 60)
+    );
+
+    c.messages = Array.isArray(saved.messages)
+      ? saved.messages
+          .filter(m =>
+            m &&
+            typeof m.text === "string" &&
+            ["mine", "theirs"].includes(m.kind)
+          )
+          .map(m => ({
+            text: m.text,
+            kind: m.kind,
+            domain: domainTypes.includes(m.domain)
+              ? m.domain
+              : "General",
+            timestamp: Number(m.timestamp) || Date.now()
+          }))
+          .sort((a, b) => a.timestamp - b.timestamp)
+      : [];
+  }
+
+  if (!conversations.length) newConversation();
+
+  activeId = conversations[0].id;
+  render();
+}
+
 fileInput.addEventListener("change", async () => {
-  const file = fileInput.files && fileInput.files[0];
+  const file = fileInput.files?.[0];
+
   if (!file) return;
 
   try {
@@ -326,31 +729,7 @@ fileInput.addEventListener("change", async () => {
       throw new Error("This file is not a valid chat backup.");
     }
 
-    conversations.forEach(c => c.p2p.close());
-
-    conversations = [];
-    nextId = 1;
-
-    backup.conversations.forEach(saved => {
-      const c = newConversation(
-        String(saved.name || "Chat " + nextId).slice(0, 40)
-      );
-
-      c.messages = Array.isArray(saved.messages)
-        ? saved.messages
-            .filter(m =>
-              m &&
-              typeof m.text === "string" &&
-              (m.kind === "mine" || m.kind === "theirs")
-            )
-            .map(m => ({ text: m.text, kind: m.kind }))
-        : [];
-    });
-
-    if (!conversations.length) newConversation();
-
-    activeId = conversations[0].id;
-    renderActive();
+    replaceConversations(backup.conversations);
   } catch (error) {
     alert("Could not open chats: " + error.message);
   } finally {
@@ -358,8 +737,15 @@ fileInput.addEventListener("change", async () => {
   }
 });
 
-// Start with one conversation.
-const first = newConversation("Chat 1");
+// Version history menu
+$("#versionButton").addEventListener("click", () => {
+  toggleMenu("versionMenu");
+});
+
+// Start with one connection request.
+const first = newConversation("User 1");
+
 activeId = first.id;
-renderActive();
+render();
+
 first.p2p.createOffer();
