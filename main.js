@@ -1,4 +1,3 @@
-
 import { createP2P } from "./p2p.js";
 
 const $ = selector => document.querySelector(selector);
@@ -217,6 +216,11 @@ function renderMessages() {
   if (wasNearBottom || messagesEl.scrollHeight > 0) {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
+
+  requestAnimationFrame(() => {
+    const messages = $("#messages");
+    messages.scrollTop = messages.scrollHeight;
+  });
 }
 
 function render() {
@@ -228,7 +232,12 @@ function render() {
   chat.hidden = !(c.viewChat && c.connected);
 
   composeView.hidden = !composerOpen;
+
   $("#timeToolbar").hidden = composerOpen;
+  $("#versionButton").hidden = composerOpen;
+  $("#composeClose").hidden = !composerOpen;
+  $("#composeOpen").hidden = composerOpen;
+  $("#composeSend").hidden = !composerOpen;
 
   document.body.classList.toggle("composer-open", composerOpen);
 
@@ -464,23 +473,16 @@ paste.addEventListener("input", () => {
 });
 
 // Full-screen composer
-function openComposer() {
+$("#composeButton").addEventListener("click", () => {
   composerOpen = true;
-
-  composeText.value = "";
-  $("#composeError").textContent = "";
-
   render();
-  composeText.focus();
-}
+  $("#composeText").focus();
+});
 
-function closeComposer() {
+$("#cancelComposeButton").addEventListener("click", () => {
   composerOpen = false;
   render();
-}
-
-$("#composeOpen").addEventListener("click", openComposer);
-$("#composeClose").addEventListener("click", closeComposer);
+});
 
 // Send to all selected connected users.
 // If multiple domain types are selected, create one message
