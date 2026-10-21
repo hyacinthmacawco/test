@@ -1,78 +1,222 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f7f5">  
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
   <title>Chat</title>
-  <link rel="stylesheet" href="style.css" />
+
+  <link rel="stylesheet" href="./style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script type="module" src="./main.js"></script>
 </head>
 <body>
-<main class="app">
-  <header>
-    <nav id="tabs" class="tabs" aria-label="Conversations"></nav>
-    <div class="header-actions">
-      <button class="icon-button" id="openChats"
-        type="button" aria-label="Open chats" title="Open chats">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v2" />
-          <path d="M3 7v11a2 2 0 0 0 2 2h12l4-8H7l-4 8" />
-        </svg>
+  <main class="app">
+
+    <!-- WebRTC connection setup -->
+    <section id="setup">
+      <h1 id="setupTitle">Create a connection</h1>
+      <p class="hint" id="setupHint">
+        Send this request to the other person.
+      </p>
+
+      <div class="qr-frame">
+        <div id="qrcode" aria-label="Connection QR code"></div>
+      </div>
+
+      <button class="primary" id="copy" disabled>Copy Request</button>
+
+      <div class="divider">OR PASTE CONNECTION CODE</div>
+
+      <textarea
+        id="paste"
+        placeholder="Paste..."
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Paste connection code"
+      ></textarea>
+
+      <p class="error" id="error" role="status"></p>
+
+      <button id="newConnection" class="text-action" type="button">
+        Back to chat
       </button>
+    </section>
 
-      <button class="icon-button" id="saveChats"
-        type="button" aria-label="Save all chats" title="Save all chats">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M5 3h12l3 3v15H4V3z"/>
-          <path d="M8 3v6h8V3M8 21v-7h8v7"/>
-        </svg>
-      </button>
+    <!-- Main chat view -->
+    <section id="chat" aria-label="Chat" hidden>
+      <div id="messages" aria-live="polite"></div>
+    </section>
 
-      <input id="chatFile" type="file" accept=".json,application/json" hidden>
-    </div>
-  </header>
+    <!-- Full-screen message composer -->
+    <section
+      id="composeView"
+      class="compose-view"
+      hidden
+      aria-label="Full screen composer"
+    >
+      <form id="composeForm">
+        <textarea
+          id="composeText"
+          placeholder="Message..."
+          aria-label="Compose message"
+        ></textarea>
 
-  <section id="setup">
-    <h1 id="setupTitle">Create a connection</h1>
-    <p class="hint" id="setupHint">
-      Copy the connection request and send it to the other person.
-    </p>
+        <p id="composeError" class="error"></p>
 
-    <div class="qr-frame">
-      <div id="qrcode" aria-label="Connection QR code"></div>
-    </div>
+        <div class="compose-actions">
+          <button
+            id="composeClose"
+            class="icon-button"
+            type="button"
+            aria-label="Close composer"
+            title="Close composer"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12"/>
+            </svg>
+          </button>
 
-    <button class="primary" id="copy" disabled>Copy Request</button>
+          <button
+            id="composeSend"
+            class="icon-button"
+            type="submit"
+            aria-label="Send message"
+            title="Send message"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M22 2 11 13"/>
+              <path d="m22 2-7 20-4-9-9-4Z"/>
+            </svg>
+          </button>
+        </div>
+      </form>
+    </section>
 
-    <div class="divider">OR PASTE CONNECTION CODE</div>
+    <!-- Bottom floating controls -->
+    <nav class="bottom-toolbar" aria-label="Chat filters">
 
-    <textarea id="paste" placeholder="Paste..."
-      autocomplete="off" spellcheck="false"
-      aria-label="Paste connection code"></textarea>
+      <!-- Time filter: hidden in composer -->
+      <div class="toolbar-item" id="timeToolbar">
+        <button
+          class="icon-button"
+          type="button"
+          data-menu="timeMenu"
+          aria-label="Time filter"
+          title="Time filter"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 7v5l3 2"/>
+          </svg>
+        </button>
 
-    <p class="error" id="error" role="status"></p>
-  </section>
+        <div class="filter-menu" id="timeMenu" hidden>
+          <button type="button" data-time="all">All time</button>
+          <button type="button" data-time="hour">Last hour</button>
+          <button type="button" data-time="day">Last 24 hours</button>
+          <button type="button" data-time="week">Last 7 days</button>
+        </div>
+      </div>
 
-  <section id="chat" aria-label="Chat">
-    <div id="messages"></div>
+      <!-- User filter -->
+      <div class="toolbar-item">
+        <button
+          class="icon-button"
+          type="button"
+          data-menu="userMenu"
+          aria-label="User filter"
+          title="User filter"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="9" cy="8" r="4"/>
+            <path d="M2 21v-2a7 7 0 0 1 14 0v2"/>
+            <path d="M17 4a4 4 0 0 1 0 8"/>
+            <path d="M19 14a5 5 0 0 1 3 5v2"/>
+          </svg>
+        </button>
 
-    <form class="composer" id="composer">
-      <div class="message-field">
-        <textarea id="message" rows="1"
-          placeholder="Message…" aria-label="Message" disabled></textarea>
+        <div class="filter-menu" id="userMenu" hidden>
+          <button id="addUser" type="button">＋ Add user / connect</button>
+        </div>
+        <div class="filter-menu" id="composeUserMenu" hidden></div>
+      </div>
 
-        <button id="send" type="submit"
-          aria-label="Send message" disabled>
+      <!-- Domain type filter -->
+      <div class="toolbar-item">
+        <button
+          class="icon-button"
+          type="button"
+          data-menu="domainMenu"
+          aria-label="Domain type filter"
+          title="Domain type filter"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16M7 12h10m-7 7h4"/>
+          </svg>
+        </button>
+
+        <div class="filter-menu" id="domainMenu" hidden></div>
+        <div class="filter-menu" id="composeDomainMenu" hidden></div>
+      </div>
+
+      <!-- Same airplane icon in both views -->
+      <div class="toolbar-item">
+        <button
+          class="icon-button"
+          type="button"
+          id="composeOpen"
+          aria-label="Compose"
+          title="Compose"
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M22 2 11 13"/>
             <path d="m22 2-7 20-4-9-9-4Z"/>
           </svg>
         </button>
       </div>
-    </form>
-  </section>
-</main>
+
+      <!-- Version history -->
+      <div class="toolbar-item">
+        <button
+          class="icon-button"
+          type="button"
+          id="versionButton"
+          aria-label="Version history"
+          title="Version history"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/>
+            <path d="M3 3v5h5"/>
+            <path d="M12 7v5l4 2"/>
+          </svg>
+        </button>
+
+        <div class="filter-menu version-menu" id="versionMenu" hidden>
+          <button type="button" id="saveVersion">Save version</button>
+          <button type="button" id="exportChats">Save all chats to file</button>
+          <button type="button" id="openChats">Open chat file</button>
+
+          <div class="menu-divider"></div>
+
+          <div id="versionList"></div>
+
+          <button type="button" id="openSelectedVersions">
+            Open selected versions
+          </button>
+
+          <p class="error" id="versionError"></p>
+        </div>
+      </div>
+    </nav>
+
+    <input
+      id="chatFile"
+      type="file"
+      accept=".json,application/json"
+      hidden
+    >
+  </main>
 </body>
 </html>
