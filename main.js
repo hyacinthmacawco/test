@@ -2,16 +2,19 @@ import { createP2P } from "./p2p.js";
 
 const $ = selector => document.querySelector(selector);
 
-const setup = $("#setup");
+const setup = $("#setupView");
 const chat = $("#chat");
-const paste = $("#paste");
-const copy = $("#copy");
-const qr = $("#qrcode");
-const errorEl = $("#error");
+const paste = $("#pasteCode");
+const copy = $("#copyCode");
+const qr = $("#qrCode");
 const messagesEl = $("#messages");
 const fileInput = $("#chatFile");
 const composeView = $("#composeView");
 const composeText = $("#composeText");
+const composeButton = $("#composeButton");
+const composeSend = $("#composeSend");
+const cancelComposeButton = $("#cancelComposeButton");
+const versionPanel = $("#versionPanel");
 
 const domainTypes = ["General", "Personal", "Work", "Link"];
 
@@ -29,6 +32,15 @@ let timeFilter = "all";
 let versions = [];
 let selectedVersions = new Set();
 let composerOpen = false;
+
+let errorEl = $("#error");
+
+if (!errorEl) {
+  errorEl = document.createElement("p");
+  errorEl.id = "error";
+  errorEl.setAttribute("role", "status");
+  setup.appendChild(errorEl);
+}
 
 function active() {
   return conversations.find(c => c.id === activeId);
@@ -49,7 +61,6 @@ function newConversation(name) {
     stage: "offer",
     busy: false,
     messages: [],
-    viewChat: false,
     connected: false
   };
 
@@ -74,7 +85,9 @@ function newConversation(name) {
             timestamp: Number(data.timestamp) || Date.now()
           };
         }
-      } catch {}
+      } catch {
+        // Treat non-JSON payloads as ordinary text messages.
+      }
 
       if (!message) {
         message = {
@@ -91,17 +104,12 @@ function newConversation(name) {
     onLocalCode: (code, type) => {
       c.localCode = code;
       c.stage = type;
-      c.viewChat = false;
 
       if (activeId === c.id) render();
     },
 
     onConnectionState: state => {
       c.connected = state.connected;
-
-      if (state.connected) {
-        c.viewChat = true;
-      }
 
       if (activeId === c.id) render();
 
@@ -114,12 +122,11 @@ function newConversation(name) {
   });
 
   conversations.push(c);
+  mainUsers.add(c.id);
 
   if (composeUsers.size === 0) {
     composeUsers.add(c.id);
   }
-
-  mainUsers.add(c.id);
 
   return c;
 }
@@ -130,7 +137,6 @@ function addMessage(c, message) {
     timestamp: Number(message.timestamp) || Date.now()
   });
 
-  // Sort and render messages in chronological order.
   c.messages.sort((a, b) => a.timestamp - b.timestamp);
 
   if (activeId === c.id) {
@@ -148,25 +154,27 @@ function getVisibleMessages() {
     hour: now - 60 * 60 * 1000,
     day: now - 24 * 60 * 60 * 1000,
     week: now - 7 * 24 * 60 * 60 * 1000
-  }[timeFilter];
+  }[timeFilter] ?? 0;
 
   return conversations
     .flatMap(c =>
-      c.messages.map((m, index) => ({
-        ...m,
+      c.messages.map((message, index) => ({
+        ...message,
         userId: c.id,
         userName: c.name,
         index
       }))
     )
-    .filter(m =>
-      mainUsers.has(m.kind === "mine" ? "__mine__" : m.userId)
+    .filter(message =>
+      mainUsers.has(
+        message.kind === "mine" ? "__mine__" : message.userId
+      )
     )
-    .filter(m =>
+    .filter(message =>
       mainDomains.size === 0 ||
-      mainDomains.has(m.domain || "General")
+      mainDomains.has(message.domain || "General")
     )
-    .filter(m => m.timestamp >= cutoff)
+    .filter(message => message.timestamp >= cutoff)
     .sort((a, b) =>
       a.timestamp - b.timestamp || a.index - b.index
     );
@@ -184,6 +192,7 @@ function renderMessages() {
 
   for (const message of getVisibleMessages()) {
     const article = document.createElement("article");
+
     article.className =
       "message " +
       (message.kind === "mine" ? "mine" : "theirs");
@@ -211,48 +220,31 @@ function renderMessages() {
 
   messagesEl.appendChild(fragment);
 
-  // Keep the newest messages at the bottom.
-  // New messages force a scroll to the bottom.
   if (wasNearBottom || messagesEl.scrollHeight > 0) {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
-
-  requestAnimationFrame(() => {
-    const messages = $("#messages");
-    messages.scrollTop = messages.scrollHeight;
-  });
 }
 
 function render() {
   const c = active();
-
   if (!c) return;
 
-  setup.hidden = c.viewChat && c.connected;
-  chat.hidden = !(c.viewChat && c.connected);
+  setup.hidden = c.connected;
+  chat.hidden = !c.connected;
 
   composeView.hidden = !composerOpen;
 
   $("#timeToolbar").hidden = composerOpen;
   $("#versionButton").hidden = composerOpen;
-  $("#composeClose").hidden = !composerOpen;
-  $("#composeOpen").hidden = composerOpen;
-  $("#composeSend").hidden = !composerOpen;
+  cancelComposeButton.hidden = !composerOpen;
+  composeButton.hidden = composerOpen;
+  composeSend.hidden = !composerOpen;
 
   document.body.classList.toggle("composer-open", composerOpen);
 
   copy.disabled = !c.localCode;
-
   copy.textContent =
     c.stage === "answer" ? "Copy Answer" : "Copy Request";
-
-  $("#setupTitle").textContent =
-    c.stage === "answer" ? "Answer ready" : "Create a connection";
-
-  $("#setupHint").textContent =
-    c.stage === "answer"
-      ? "Copy this answer and send it to the person who shared the request."
-      : "Send this request to the other person.";
 
   qr.replaceChildren();
 
@@ -265,19 +257,26 @@ function render() {
         correctLevel: QRCode.CorrectLevel.L
       });
     } catch {
-      setError("Could not generate QR. Use the copy button.");
+      setError("Could not generate QR code. Use the copy button.");
     }
   }
 
   paste.hidden = c.stage === "answer";
-  $(".divider").hidden = c.stage === "answer";
+  $(".setup-separator").hidden = c.stage === "answer";
+
+  if (c.connected) {
+    setError("");
+  }
 
   renderMessages();
   renderFilters();
   renderDomainButtons();
+  renderVersions();
 }
 
 function renderCheckboxMenu(container, options, selected, changed) {
+  if (!container) return;
+
   container.replaceChildren();
 
   for (const option of options) {
@@ -369,6 +368,7 @@ function renderDomainButtons() {
 
 function toggleMenu(id) {
   const menu = $("#" + id);
+  if (!menu) return;
 
   document.querySelectorAll(".filter-menu").forEach(item => {
     if (item !== menu) item.hidden = true;
@@ -401,7 +401,11 @@ document.addEventListener("click", event => {
   }
 });
 
-// Time filter
+// Time filtering
+$("#timeFilterButton").addEventListener("click", () => {
+  toggleMenu("timeMenu");
+});
+
 $("#timeMenu").querySelectorAll("[data-time]").forEach(button => {
   button.addEventListener("click", () => {
     timeFilter = button.dataset.time;
@@ -410,29 +414,7 @@ $("#timeMenu").querySelectorAll("[data-time]").forEach(button => {
   });
 });
 
-// Create a new connection
-$("#addUser").addEventListener("click", () => {
-  const c = newConversation();
-
-  activeId = c.id;
-  composerOpen = false;
-
-  setError("");
-  render();
-
-  c.p2p.createOffer();
-});
-
-$("#newConnection").addEventListener("click", () => {
-  const c = active();
-
-  if (!c) return;
-
-  c.viewChat = c.connected;
-  render();
-});
-
-// Copy offer or answer
+// Copy the current request or answer
 copy.addEventListener("click", async () => {
   const c = active();
 
@@ -440,13 +422,21 @@ copy.addEventListener("click", async () => {
 
   try {
     await navigator.clipboard.writeText(c.localCode);
+
+    const previousText = copy.textContent;
     copy.textContent = "Copied";
+
+    setTimeout(() => {
+      if (activeId === c.id) {
+        copy.textContent = previousText;
+      }
+    }, 1500);
   } catch {
     setError("Clipboard unavailable. Copy the connection code manually.");
   }
 });
 
-// Process pasted connection data
+// Process a pasted WebRTC request or answer
 async function handlePaste() {
   const c = active();
 
@@ -456,7 +446,8 @@ async function handlePaste() {
   setError("");
 
   try {
-    await c.p2p.processCode(paste.value, c.stage);
+    await c.p2p.processCode(paste.value.trim(), c.stage);
+    paste.value = "";
   } catch (error) {
     setError(error.message || "Could not process connection code.");
   } finally {
@@ -469,39 +460,38 @@ paste.addEventListener("paste", () => {
 });
 
 paste.addEventListener("input", () => {
-  if (paste.value.trim().endsWith("}")) handlePaste();
+  const value = paste.value.trim();
+
+  if (value.endsWith("}")) {
+    handlePaste();
+  }
 });
 
-// Full-screen composer
-$("#composeButton").addEventListener("click", () => {
+// Open the full-screen composer
+composeButton.addEventListener("click", () => {
   composerOpen = true;
+  setError("");
   render();
-  $("#composeText").focus();
+  composeText.focus();
 });
 
-$("#cancelComposeButton").addEventListener("click", () => {
+cancelComposeButton.addEventListener("click", () => {
   composerOpen = false;
   render();
 });
 
-// Send to all selected connected users.
-// If multiple domain types are selected, create one message
-// per selected domain type.
-$("#composeForm").addEventListener("submit", event => {
-  event.preventDefault();
-
+// Send to selected connected peers
+function sendComposedMessage() {
   const text = composeText.value.trim();
-
-  const recipients = conversations.filter(c =>
-    composeUsers.has(c.id) &&
-    c.p2p.isConnected()
-  );
 
   if (!text) return;
 
+  const recipients = conversations.filter(c =>
+    composeUsers.has(c.id) && c.p2p.isConnected()
+  );
+
   if (!recipients.length) {
-    $("#composeError").textContent =
-      "Select at least one connected user.";
+    setError("Select at least one connected user.");
     return;
   }
 
@@ -511,6 +501,7 @@ $("#composeForm").addEventListener("submit", event => {
 
   const timestamp = Date.now();
   let sent = 0;
+  let failed = 0;
 
   for (const domain of domains) {
     const payload = JSON.stringify({
@@ -532,21 +523,34 @@ $("#composeForm").addEventListener("submit", event => {
         });
 
         sent++;
-      } catch (error) {
-        $("#composeError").textContent =
-          error.message || "Could not send message.";
+      } catch {
+        failed++;
       }
     }
   }
 
-  if (sent) {
+  if (sent > 0) {
     composeText.value = "";
-    $("#composeError").textContent = "";
-    closeComposer();
+    setError("");
+    composerOpen = false;
+    render();
+  }
+
+  if (failed > 0) {
+    setError("Some messages could not be sent.");
+  }
+}
+
+composeSend.addEventListener("click", sendComposedMessage);
+
+composeText.addEventListener("keydown", event => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault();
+    sendComposedMessage();
   }
 });
 
-// Export and import helpers
+// Download JSON files
 function downloadJSON(data, filename) {
   const blob = new Blob(
     [JSON.stringify(data, null, 2)],
@@ -577,8 +581,11 @@ function snapshot(name) {
   };
 }
 
+// Version history
 function renderVersions() {
-  const container = $("#versionList");
+  const container = $("#versionsList");
+  if (!container) return;
+
   container.replaceChildren();
 
   for (const version of versions) {
@@ -609,7 +616,18 @@ function renderVersions() {
   }
 }
 
-$("#saveVersion").addEventListener("click", () => {
+$("#versionButton").addEventListener("click", () => {
+  versionPanel.hidden = !versionPanel.hidden;
+  document.querySelectorAll(".filter-menu").forEach(menu => {
+    menu.hidden = true;
+  });
+});
+
+$("#closeVersionPanel").addEventListener("click", () => {
+  versionPanel.hidden = true;
+});
+
+$("#saveVersionButton").addEventListener("click", () => {
   const name = prompt(
     "Version name:",
     "Version " + (versions.length + 1)
@@ -627,37 +645,16 @@ $("#saveVersion").addEventListener("click", () => {
   renderVersions();
 });
 
-$("#exportChats").addEventListener("click", () => {
-  downloadJSON({
-    format: "serverless-p2p-chat",
-    version: 2,
-    savedAt: new Date().toISOString(),
-
-    conversations: conversations.map(c => ({
-      name: c.name,
-      messages: c.messages.map(m => ({ ...m }))
-    }))
-  }, "p2p-chats.json");
-});
-
-$("#openChats").addEventListener("click", () => {
-  fileInput.click();
-});
-
-$("#openSelectedVersions").addEventListener("click", () => {
-  const chosen = versions.filter(v =>
-    selectedVersions.has(v.id)
-  );
+$("#openVersionButton").addEventListener("click", () => {
+  const chosen = versions.filter(v => selectedVersions.has(v.id));
 
   if (!chosen.length) {
-    $("#versionError").textContent =
-      "Select one or more versions first.";
+    setError("Select a saved version first.");
     return;
   }
 
   const merged = new Map();
 
-  // Merge selected snapshots in chronological selection order.
   for (const version of [...chosen].reverse()) {
     for (const saved of version.conversations || []) {
       const key = saved.name || "Chat";
@@ -677,7 +674,27 @@ $("#openSelectedVersions").addEventListener("click", () => {
     }))
   );
 
-  $("#versionMenu").hidden = true;
+  versionPanel.hidden = true;
+  setError("");
+});
+
+// Export all chats
+$("#exportChatsButton").addEventListener("click", () => {
+  downloadJSON({
+    format: "serverless-p2p-chat",
+    version: 2,
+    savedAt: new Date().toISOString(),
+
+    conversations: conversations.map(c => ({
+      name: c.name,
+      messages: c.messages.map(m => ({ ...m }))
+    }))
+  }, "p2p-chats.json");
+});
+
+// Import saved chats
+$("#importChatsButton").addEventListener("click", () => {
+  fileInput.click();
 });
 
 function replaceConversations(savedConversations) {
@@ -688,6 +705,8 @@ function replaceConversations(savedConversations) {
 
   mainUsers = new Set(["__mine__"]);
   composeUsers = new Set();
+  mainDomains = new Set();
+  composeDomains = new Set();
 
   for (const saved of savedConversations) {
     const c = newConversation(
@@ -713,15 +732,18 @@ function replaceConversations(savedConversations) {
       : [];
   }
 
-  if (!conversations.length) newConversation();
+  if (!conversations.length) {
+    newConversation();
+  }
 
   activeId = conversations[0].id;
+  composerOpen = false;
+
   render();
 }
 
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files?.[0];
-
   if (!file) return;
 
   try {
@@ -732,6 +754,7 @@ fileInput.addEventListener("change", async () => {
     }
 
     replaceConversations(backup.conversations);
+    setError("");
   } catch (error) {
     alert("Could not open chats: " + error.message);
   } finally {
@@ -739,12 +762,7 @@ fileInput.addEventListener("change", async () => {
   }
 });
 
-// Version history menu
-$("#versionButton").addEventListener("click", () => {
-  toggleMenu("versionMenu");
-});
-
-// Start with one connection request.
+// Start with a connection request
 const first = newConversation("User 1");
 
 activeId = first.id;
